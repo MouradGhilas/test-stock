@@ -17,6 +17,8 @@ import { fetchEarningsFilings } from './sources/edgar.js';
 import { computeIndicators } from './analysis/indicators.js';
 import { analyzeEarningsReactions } from './analysis/earningsReaction.js';
 import { analyzeSentiment } from './analysis/sentiment.js';
+import { analyzeAnticipation } from './analysis/anticipation.js';
+import { appendSnapshot, readCycleSnapshots } from './core/store.js';
 import { buildVerdict } from './analysis/verdict.js';
 
 /**
@@ -182,9 +184,16 @@ export async function analyzeTicker(rawTicker) {
     : null;
   const sentiment = news ? analyzeSentiment(news, now) : null;
 
+  const earningsIso = earningsDate ? isoDay(earningsDate.date) : null;
+
+  // Observations passées sur cette même échéance : c'est ce qui permet de dire
+  // depuis combien de temps le marché price l'événement.
+  const impliedHistory = await readCycleSnapshots(ticker, earningsIso);
+
   const facts = {
     ticker,
     now,
+    impliedHistory,
     quote,
     summary,
     indicators,
@@ -201,6 +210,19 @@ export async function analyzeTicker(rawTicker) {
   };
 
   const decision = buildVerdict(facts);
+  const anticipation = analyzeAnticipation(facts);
+
+  // Trace de l'observation courante, pour les consultations suivantes.
+  if (earningsIso && options?.impliedMovePercent) {
+    await appendSnapshot(ticker, {
+      earningsDate: earningsIso,
+      price: quote.price,
+      impliedMovePercent: options.impliedMovePercent,
+      atmImpliedVol: options.atmImpliedVol,
+      iv30: options.iv30,
+      method: options.method,
+    });
+  }
 
   return {
     ticker,
@@ -304,6 +326,7 @@ export async function analyzeTicker(rawTicker) {
       close: b.close,
     })),
     decision,
+    anticipation,
     sources: tracker.entries,
     config: {
       weights: CONFIG.analysis.weights,

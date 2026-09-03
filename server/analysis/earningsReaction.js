@@ -20,7 +20,7 @@
  * y compris ceux ou la réaction fut trop faible pour trancher seule.
  */
 
-import { median, mean, isNum } from '../core/stats.js';
+import { median, mean, stdev, isNum } from '../core/stats.js';
 
 const VOTE_RATIO = 2;
 const VOTE_MIN_MOVE = 1.5;
@@ -135,6 +135,7 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
 
   const reactions = events.map((e) => e.reactionPercent);
   const positives = reactions.filter((r) => r > 0).length;
+  const runUps = events.map((e) => e.runUpPercent).filter(isNum);
 
   // La résolution dit sur quoi repose réellement la mesure : un horaire
   // officiellement déposé n'a pas la même valeur qu'une déduction.
@@ -155,6 +156,11 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
     medianMove: median(reactions),
     meanMove: mean(reactions),
     positiveRate: positives / events.length,
-    medianRunUp: median(events.map((e) => e.runUpPercent).filter(isNum)),
+    // Parcours des cinq séances précédant chaque publication. La dispersion
+    // sert de référence : elle dit ce qu'est un parcours *habituel* pour ce
+    // titre, donc ce qui, aujourd'hui, sort de l'ordinaire.
+    runUps,
+    medianRunUp: median(runUps),
+    runUpStdev: stdev(runUps),
   };
 }
