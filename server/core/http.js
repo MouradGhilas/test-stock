@@ -5,8 +5,8 @@
  *  - un timeout dur et des réessais avec backoff exponentiel,
  *  - un plafond de requêtes simultanees (on reste poli avec les sources),
  *  - le cache TTL partage,
- *  - la traçabilité : chaque appel est enregistre dans un "tracker" pour
- *    être affiche à l'utilisateur (URL, statut, latence, taille, cache).
+ *  - la traçabilité : chaque appel est enregistré dans un "tracker" pour
+ *    être affiché à l'utilisateur (URL, statut, latence, taille, cache).
  */
 
 import { CONFIG } from '../config.js';
@@ -59,9 +59,9 @@ export function createTracker() {
 }
 
 /**
- * Recupere une URL en texte brut.
+ * Récupère une URL en texte brut.
  * @param {object} options
- * @param {string} options.label  Nom lisible de la source (affiche dans l'UI).
+ * @param {string} options.label  Nom lisible de la source (affiché dans l'UI).
  * @param {number} options.ttl    Durée de cache en secondes.
  */
 export async function fetchText(url, options = {}) {
@@ -79,7 +79,7 @@ export async function fetchText(url, options = {}) {
   const urlKey = `fail:url:${url}`;
   const hostKey = `fail:host:${hostOf(url)}`;
 
-  // Disjoncteur : une source qui vient d'echouer est écartée quelques minutes
+  // Disjoncteur : une source qui vient d'échouer est écartée quelques minutes
   // plutot que re-sollicitée à chaque analyse. Sans cela, un agregateur en
   // panne consomme tout le budget de temps en réessais.
   //

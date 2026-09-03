@@ -1,6 +1,6 @@
 /**
  * Serveur HTTP : sert l'interface et expose l'API d'analyse.
- * Sans dependance externe -- `node:http` suffit pour ce perimetre.
+ * Sans dependance externe -- `node:http` suffit pour ce perimêtre.
  */
 
 import http from 'node:http';

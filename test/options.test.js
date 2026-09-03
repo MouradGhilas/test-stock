@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOptionSymbol, groupByExpiry, atmProfile, inferEarningsWindow } from '../server/sources/cboe.js';
+import { parseOptionSymbol, groupByExpiry, atmProfile, inferEarningsWindow, pickReference } from '../server/sources/cboe.js';
 
 test('parseOptionSymbol décode le format OCC', () => {
   const r = parseOptionSymbol('AAPL260902C00205000');
@@ -59,6 +59,29 @@ test('inferEarningsWindow encadre la publication par le saut de volatilité', ()
   assert.equal(window.after.toISOString().slice(0, 10), '2026-10-16');
   assert.equal(window.before.toISOString().slice(0, 10), '2026-11-20');
   assert.ok(window.ivJumpPoints > 4);
+});
+
+test('pickReference ignore une échéance sans volatilité cotée', () => {
+  // Cas réel : une échéance fraîchement listée apparaît juste avant la
+  // publication mais n'a pas encore de volatilité implicite. La retenir
+  // comme référence ferait échouer la décomposition en silence.
+  const chains = groupByExpiry([
+    option('X261016C00100000', 5, 5.2, 0.333), option('X261016P00100000', 5, 5.2, 0.333),
+    option('X261023C00100000', 0, 0, 0),       option('X261023P00100000', 0, 0, 0),
+    option('X261120C00100000', 8, 8.2, 0.375), option('X261120P00100000', 8, 8.2, 0.375),
+  ]);
+
+  const choisie = pickReference(chains, new Date('2026-11-18T00:00:00Z'), Date.UTC(2026, 8, 3), 100);
+  assert.equal(choisie.chain.expiry.toISOString().slice(0, 10), '2026-10-16',
+    "l'échéance du 23 octobre, sans volatilité, doit être écartée");
+  assert.equal(choisie.atm.iv, 0.333);
+});
+
+test('pickReference écarte les échéances postérieures à la publication', () => {
+  const chains = groupByExpiry([
+    option('X261120C00100000', 8, 8.2, 0.375), option('X261120P00100000', 8, 8.2, 0.375),
+  ]);
+  assert.equal(pickReference(chains, new Date('2026-11-18T00:00:00Z'), Date.UTC(2026, 8, 3), 100), null);
 });
 
 test('inferEarningsWindow ne conclut pas sur une structure plate', () => {

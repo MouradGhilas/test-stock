@@ -15,7 +15,7 @@ export function sma(bars, period) {
 }
 
 /**
- * RSI de Wilder. Au-dessus de 70 le titre est considere sur-acacte,
+ * RSI de Wilder. Au-dessus de 70 le titre est considère sur-acacte,
  * en dessous de 30 sur-vendu.
  */
 export function rsi(bars, period = 14) {
@@ -63,7 +63,7 @@ export function atr(bars, period = 14) {
   return trueRanges.length >= period ? mean(trueRanges.slice(-period)) : null;
 }
 
-/** Volatilité realisee annualisee, en pourcentage. */
+/** Volatilité réalisée annualisee, en pourcentage. */
 export function realizedVolatility(bars, period = 30) {
   const values = closes(bars);
   if (values.length < period + 1) return null;

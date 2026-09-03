@@ -171,7 +171,7 @@ function factorSurpriseRecord(facts, weight) {
   });
 }
 
-/** Révisions d'estimations des quatre dernières semaines sur le trimestre a venir. */
+/** Révisions d'estimations des quatre dernières semaines sur le trimestre à venir. */
 function factorRevisions(facts, weight) {
   const next = facts.forecast?.quarterly?.[0];
   if (!next) {
@@ -573,8 +573,8 @@ export function buildVerdict(facts) {
  */
 function buildPlan(facts, verdict, daysToEarnings) {
   const implied = facts.options?.impliedMovePercent;
-  // La plus forte amplitude passee peut etre une hausse : la retenir comme
-  // scenario adverse gonfle le risque affiche sans rien dire de la baisse.
+  // La plus forte amplitude passee peut être une hausse : la retenir comme
+  // scenario adverse gonfle le risque affiché sans rien dire de la baisse.
   const worstDrop = facts.reactions?.worstDrop;
   const price = facts.quote?.price ?? facts.indicators?.lastClose;
 
