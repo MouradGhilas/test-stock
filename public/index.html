@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyse pre-résultats — faut-il entrer avant la publication ?</title>
+<meta name="description" content="Collecte multi-sources et verdict argumente sur l'entree dans une action avant ses resultats trimestriels.">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📈</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <h1>Faut-il entrer avant les résultats&nbsp;?</h1>
+    <p>
+      Saisissez un ticker. Le site interroge une dizaine de sources publiques — cotation, historique,
+      chaîne d'options, calendrier et surprises de résultats, révisions d'analystes, positions vendeuses,
+      actualités — puis en tire un verdict argumenté, facteur par facteur.
+    </p>
+
+    <form class="searchbar" id="form" autocomplete="off">
+      <input id="ticker" name="ticker" placeholder="Ticker : AAPL, MSFT, NVDA…" maxlength="10"
+             aria-label="Ticker de l'action a analyser" required>
+      <button type="submit" id="submit">Analyser</button>
+    </form>
+
+    <div class="examples">
+      <span>Exemples&nbsp;:</span>
+      <button class="chip" type="button" data-ticker="AAPL">AAPL</button>
+      <button class="chip" type="button" data-ticker="MSFT">MSFT</button>
+      <button class="chip" type="button" data-ticker="NVDA">NVDA</button>
+      <button class="chip" type="button" data-ticker="COST">COST</button>
+      <button class="chip" type="button" data-ticker="ORCL">ORCL</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="status" class="msg hidden"></div>
+  <div id="report"></div>
+
+  <div class="disclaimer">
+    <strong>Ce site n'est pas un conseil en investissement.</strong>
+    Il agrège des données publiques et applique un barème explicite ; il ne prédit pas le résultat
+    d'une publication. Acheter avant des résultats revient à parier sur un événement dont l'issue
+    n'est pas connaissable à l'avance, avec un risque de décalage à l'ouverture qu'aucun ordre stop
+    ne couvre. Les données sont différées et peuvent être incomplètes ou erronées.
+  </div>
+</main>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>
