@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildVerdict } from '../server/analysis/verdict.js';
 import { projectNextEarnings } from '../server/sources/nasdaq.js';
+import { daysBetween } from '../server/core/parse.js';
 
 const MAINTENANT = new Date('2026-09-03T00:00:00Z');
 const jour = (iso) => new Date(`${iso}T00:00:00Z`);
@@ -165,6 +166,32 @@ test('sans quatre trimestres, la projection retombe sur la cadence', () => {
   assert.equal(r.basis, 'cadence');
   assert.ok(r.date > MAINTENANT);
   assert.ok(![0, 6].includes(r.date.getUTCDay()), 'ne doit pas tomber un week-end');
+});
+
+test('une publication imminente n est pas repoussée d un trimestre', () => {
+  // Cas Zscaler : publication le 2 septembre une année, le 3 la suivante.
+  // L'ancrage annuel tombe donc la veille de la vraie date. Avancer d'un
+  // trimestre ferait disparaître la publication du jour même -- c'est
+  // exactement ce que faisait le garde-fou destiné aux historiques périmés.
+  const zs = ['2026-05-26', '2026-02-26', '2025-11-25', '2025-09-02']
+    .map((iso) => ({ reportedAt: jour(iso) }));
+
+  const r = projectNextEarnings(zs, MAINTENANT); // 3 septembre 2026
+  assert.equal(r.date.toISOString().slice(0, 10), '2026-09-01');
+  assert.equal(r.basis, 'annuel');
+  // La date reste dans la fenêtre où la confirmation par le calendrier
+  // officiel peut encore retrouver la vraie publication.
+  assert.ok(Math.abs(daysBetween(MAINTENANT, r.date)) <= 10);
+});
+
+test('une publication tout juste effectuée passe bien au trimestre suivant', () => {
+  // Même configuration, mais la société vient de publier : la projection
+  // doit cette fois avancer, sans quoi on proposerait une date révolue.
+  const rapports = ['2026-09-02', '2026-05-26', '2026-02-26', '2025-09-02']
+    .map((iso) => ({ reportedAt: jour(iso) }));
+
+  const r = projectNextEarnings(rapports, MAINTENANT);
+  assert.ok(r.date > MAINTENANT, `attendu une date future, obtenu ${r.date.toISOString()}`);
 });
 
 test('la projection ne renvoie jamais une date passée', () => {

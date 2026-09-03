@@ -264,10 +264,30 @@ export function projectNextEarnings(surprises, now = new Date()) {
     basis = 'cadence';
   }
 
-  // Si la date obtenue est déjà passée, l'historique n'a pas été rafraichi :
-  // on avance de trimestre en trimestre jusqu'a repasser dans le futur.
+  // Une date projetée dans le passé recouvre deux situations opposées, et les
+  // confondre fait rater la publication qu'on cherche.
+  //
+  //  - Elle est à peine passée : la société publie à quelques jours près
+  //    d'une année sur l'autre, la projection est simplement un peu tôt et la
+  //    publication est *imminente*. Avancer d'un trimestre la ferait
+  //    disparaître -- c'est ce qui arrivait sur Zscaler, publiant le 2
+  //    septembre une année et le 3 la suivante.
+  //  - Elle est loin derrière : l'historique n'a pas été rafraîchi, et il
+  //    faut bien avancer de trimestre en trimestre pour revenir dans le futur.
+  //
+  // Le cas « à peine passée » n'appelle un trimestre de plus que si la
+  // société a effectivement publié à cette date-là.
+  const GRACE_DAYS = 10;
   let guard = 0;
-  while (daysBetween(now, next) < 0 && guard < 8) {
+  while (guard < 8) {
+    const daysUntil = daysBetween(now, next);
+    if (daysUntil >= 0) break;
+
+    if (daysUntil >= -GRACE_DAYS) {
+      const alreadyReported = Math.abs(daysBetween(next, dates[0])) <= GRACE_DAYS;
+      if (!alreadyReported) break;
+    }
+
     next = addDays(next, cadence);
     basis = 'cadence';
     guard += 1;
@@ -318,6 +338,89 @@ async function confirmInCalendar(ticker, aroundDate, tracker) {
     source: 'Calendrier officiel Nasdaq',
     consensusEps: toNumber(found.hit.epsForecast),
     fiscalQuarter: found.hit.fiscalQuarterEnding || null,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Calendrier des publications à venir                                  */
+/* ------------------------------------------------------------------ */
+
+const TIMING_FROM_CALENDAR = {
+  'time-after-hours': 'after-close',
+  'time-pre-market': 'before-open',
+};
+
+/**
+ * Sociétés publiant leurs résultats dans les prochains jours ouvrés.
+ *
+ * C'est l'entrée naturelle dans l'outil : la vraie question n'est pas
+ * « que vaut telle action » mais « qui publie cette semaine, et lequel de
+ * ces dossiers mérite qu'on s'y arrête ». Les jours sont interrogés en
+ * parallèle et mis en cache : le calendrier ne bouge pas d'une heure sur
+ * l'autre.
+ *
+ * @param {number} days     Nombre de jours ouvrés à couvrir.
+ * @param {number} minCap   Capitalisation minimale, en dollars. Le calendrier
+ *                          brut est saturé de très petites valeurs sur
+ *                          lesquelles aucune analyse sérieuse n'est possible.
+ */
+export async function fetchEarningsCalendar(tracker, { days = 5, minCap = 0, from = new Date() } = {}) {
+  const targets = [];
+  const cursor = new Date(from.getTime());
+  while (targets.length < days) {
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) targets.push(new Date(cursor.getTime()));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  const fetched = await Promise.allSettled(
+    targets.map(async (day) => {
+      const iso = toISODate(day);
+      const data = await nasdaq(`/calendar/earnings?date=${iso}`, {
+        label: `Nasdaq · calendrier ${iso}`,
+        ttl: CONFIG.cacheTtl.calendar,
+        tracker,
+      });
+      return { date: iso, rows: data?.rows || [] };
+    }),
+  );
+
+  let total = 0;
+  const schedule = [];
+
+  for (const result of fetched) {
+    if (result.status !== 'fulfilled') continue;
+    const { date, rows } = result.value;
+    total += rows.length;
+
+    const companies = rows
+      .map((row) => ({
+        symbol: String(row.symbol || '').toUpperCase(),
+        name: row.name || null,
+        timing: TIMING_FROM_CALENDAR[row.time] || 'unknown',
+        marketCap: toNumber(row.marketCap),
+        consensusEps: toNumber(row.epsForecast),
+        estimates: toNumber(row.noOfEsts),
+        lastYearEps: toNumber(row.lastYearEPS),
+        lastYearDate: toISODate(parseDate(row.lastYearRptDt)),
+        fiscalQuarter: row.fiscalQuarterEnding || null,
+      }))
+      .filter((c) => c.symbol && (!minCap || (c.marketCap ?? 0) >= minCap))
+      // Les plus grosses capitalisations d'abord : ce sont celles dont les
+      // options et l'historique permettent une analyse exploitable.
+      .sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
+
+    if (companies.length) schedule.push({ date, companies });
+  }
+
+  schedule.sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    from: toISODate(targets[0]),
+    to: toISODate(targets.at(-1)),
+    days: schedule,
+    retained: schedule.reduce((acc, d) => acc + d.companies.length, 0),
+    total,
   };
 }
 

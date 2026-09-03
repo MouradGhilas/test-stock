@@ -9,6 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG } from './config.js';
 import { analyzeTicker } from './analyze.js';
+import { fetchEarningsCalendar } from './sources/nasdaq.js';
+import { createTracker } from './core/http.js';
 import { stats as cacheStats } from './core/cache.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -83,6 +85,27 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/health') {
     return sendJson(res, 200, { status: 'ok', uptime: process.uptime(), cache: cacheStats() });
+  }
+
+  // Calendrier des publications à venir : l'entrée naturelle dans l'outil,
+  // avant même de savoir quel ticker on veut regarder.
+  if (url.pathname === '/api/calendar') {
+    const ip = req.socket.remoteAddress || 'inconnu';
+    if (rateLimited(ip)) {
+      return sendJson(res, 429, { error: 'Trop de requêtes. Patientez une minute.' });
+    }
+
+    const days = Math.min(10, Math.max(1, Number(url.searchParams.get('days')) || 5));
+    const minCap = Math.max(0, Number(url.searchParams.get('minCap')) || CONFIG.analysis.calendarMinMarketCap);
+
+    try {
+      const tracker = createTracker();
+      const calendar = await fetchEarningsCalendar(tracker, { days, minCap });
+      return sendJson(res, 200, { ...calendar, minCap, sources: tracker.entries });
+    } catch (error) {
+      console.error('[calendrier]', error);
+      return sendJson(res, 502, { error: 'Calendrier des résultats indisponible pour le moment.' });
+    }
   }
 
   if (url.pathname === '/api/analyze') {

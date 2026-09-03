@@ -189,3 +189,30 @@ details.sources summary::marker { color: var(--faint); }
   .barrow { grid-template-columns: 118px 1fr 58px; font-size: 12px; }
   .identity .price { text-align: left; }
 }
+
+/* ---------- Calendrier des publications ---------- */
+.cal-day { margin-top: 18px; }
+.cal-day:first-child { margin-top: 6px; }
+.cal-date {
+  font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; margin-bottom: 9px;
+}
+.cal-date .today {
+  color: var(--amber); border: 1px solid currentColor; border-radius: 5px;
+  padding: 1px 7px; margin-left: 8px; font-size: 11px; letter-spacing: 0.04em;
+}
+.cal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 8px; }
+.cal-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px; color: var(--text);
+  font-family: inherit; font-size: 13px;
+}
+.cal-item:hover { border-color: var(--blue); background: #1c2635; }
+.cal-item .sym { font-family: var(--mono); font-weight: 600; font-size: 14px; }
+.cal-item .cap { float: right; color: var(--faint); font-family: var(--mono); font-size: 12px; }
+.cal-item .co { color: var(--muted); font-size: 12px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-item .when { color: var(--faint); font-size: 11.5px; margin-top: 4px; }
+.cal-item .when b { color: var(--muted); font-weight: 500; }
+.cal-more { margin-top: 14px; color: var(--faint); font-size: 12.5px; }

@@ -513,7 +513,9 @@ export function buildVerdict(facts) {
           );
         } else if (daysToEarnings <= lastCallDays) {
           warnings.push(
-            "Entrer a la veille de la publication, c'est prendre tout le risque de gap sans laisser au marché le temps de valoriser la nouvelle.",
+            daysToEarnings === 0
+              ? "La publication a lieu aujourd'hui : entrer maintenant, c'est prendre tout le risque de gap sans aucune marge de manoeuvre."
+              : "Entrer à la veille de la publication, c'est prendre tout le risque de gap sans laisser au marché le temps de valoriser la nouvelle.",
           );
         }
       }

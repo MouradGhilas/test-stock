@@ -14,13 +14,24 @@ position **avant** la publication trimestrielle.
 
 ```bash
 npm start           # http://localhost:3000
-npm test            # 82 tests, sans accès réseau
+npm test            # 84 tests, sans accès réseau
 npm run backtest    # rejoue le barème sur les publications passées
 ```
 
 Aucune dépendance à installer : le projet tourne sur Node 20+ et n'utilise que
 la bibliothèque standard. `PORT` et `HOST` sont configurables par variable
 d'environnement.
+
+## Deux façons d'entrer
+
+Le site s'ouvre sur **le calendrier des publications à venir** : les sociétés
+de plus de 2 milliards de dollars qui publient dans les cinq prochains jours
+ouvrés, groupées par jour, avec l'horaire annoncé et le consensus attendu. Un
+clic lance l'analyse. C'est l'usage réel — la question de départ est rarement
+« que vaut telle action », plutôt « qui publie cette semaine, et lequel de ces
+dossiers mérite qu'on s'y arrête ».
+
+La recherche par ticker reste disponible pour un titre précis.
 
 ## Ce que le site collecte
 
@@ -158,6 +169,8 @@ dans [`docs/backtest.md`](docs/backtest.md).
   pas de date, elle est extrapolée (ancrage sur le même trimestre fiscal un an
   plus tôt). L'interface distingue toujours date confirmée, annoncée et
   extrapolée.
+- **Le calendrier ne couvre que les jours ouvrés à venir**, et une société
+  peut décaler sa date après l'avoir annoncée.
 - **Cinq ans d'historique**, soit une vingtaine de publications par société.
   C'est assez pour que les mesures d'amplitude tiennent, pas pour trancher une
   question de direction. L'interface signale les titres où l'échantillon
@@ -175,8 +188,9 @@ dans [`docs/backtest.md`](docs/backtest.md).
 ## API
 
 ```
-GET /api/analyze?ticker=AAPL   → rapport complet (JSON)
-GET /api/health                → état du service et du cache
+GET /api/calendar?days=5&minCap=2e9   → publications à venir, groupées par jour
+GET /api/analyze?ticker=AAPL          → rapport complet (JSON)
+GET /api/health                       → état du service et du cache
 ```
 
 Le rapport contient l'identité du titre, les données de marché, l'événement,
@@ -197,7 +211,7 @@ server/
 public/                 interface (HTML/CSS/JS, sans framework)
 scripts/backtest.js     lanceur du backtest sur un univers de tickers
 docs/backtest.md        résultat de la calibration et sa méthode
-test/                   82 tests unitaires, sans accès réseau
+test/                   84 tests unitaires, sans accès réseau
 ```
 
 Le client HTTP apporte timeout, réessais avec backoff, plafond de requêtes
