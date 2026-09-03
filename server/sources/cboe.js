@@ -1,15 +1,15 @@
 /**
- * Source : chaîne d'options differee du CBOE.
+ * Source : chaîne d'options différée du CBOE.
  *
- * C'est la pièce maîtresse d'une analyse pre-résultats : le marché options
+ * C'est la pièce maîtresse d'une analyse pré-résultats : le marché options
  * price déjà un mouvement pour le jour de la publication. Le comparer aux
  * réactions historiques dit si le pari est cher ou non.
  *
  * Méthode. Le straddle "à la monnaie" d'une échéance donnée mesure le
- * mouvement attendu jusqu'a cette échéance -- événement *et* volatilité
+ * mouvement attendu jusqu'à cette échéance -- événement *et* volatilité
  * ordinaire mélangés. Si la première échéance après les résultats tombe
  * trois semaines plus tard, on surestime largement l'impact du résultat.
- * On isolé donc l'événement par difference de variance entre une échéance
+ * On isole donc l'événement par difference de variance entre une échéance
  * qui précède la publication (volatilité ordinaire seule) et une échéance
  * qui la suit :
  *
@@ -17,8 +17,8 @@
  *     mouvement_evenement = sqrt(V_event)
  *
  * sigma_pre sert d'estimation de la volatilité ordinaire sur toute la
- * période ; ce qui dépasse est attribué au résultat. A défaut de deux
- * échéances exploitables, on retombe sur le straddle brut, signale comme tel.
+ * période ; ce qui dépasse est attribué au résultat. À défaut de deux
+ * échéances exploitables, on retombe sur le straddle brut, signalé comme tel.
  */
 
 import { CONFIG } from '../config.js';
@@ -29,7 +29,7 @@ const BASE = 'https://cdn.cboe.com/api/global/delayed_quotes/options';
 const DAY_MS = 86_400_000;
 const YEAR_DAYS = 365;
 
-/** "AAPL260902C00205000" -> { expiry, type, strike }. Le suffixe fait 15 caracteres. */
+/** "AAPL260902C00205000" -> { expiry, type, strike }. Le suffixe fait 15 caractères. */
 export function parseOptionSymbol(symbol) {
   const text = String(symbol || '');
   if (text.length < 16) return null;
@@ -70,7 +70,7 @@ export function groupByExpiry(options) {
   return [...chains.values()].sort((a, b) => a.expiry - b.expiry);
 }
 
-/** Caracteristiques à la monnaie d'une échéance : straddle et volatilité implicite. */
+/** Caractéristiques à la monnaie d'une échéance : straddle et volatilité implicite. */
 export function atmProfile(chain, spot) {
   const strikes = [...chain.calls.keys()].filter((k) => chain.puts.has(k));
   if (!strikes.length) return null;
@@ -93,13 +93,13 @@ export function atmProfile(chain, spot) {
 }
 
 /**
- * Déduit la fenetre de publication a partir de la structure par terme.
+ * Déduit la fenêtre de publication à partir de la structure par terme.
  *
  * La volatilité implicite d'une échéance qui englobe des résultats est
  * mécaniquement plus élevée que celle de l'échéance précédente. Le plus gros
- * saut de volatilité encadre donc la date de publication. C'est un controle
+ * saut de volatilité encadre donc la date de publication. C'est un contrôle
  * indépendant, très utile quand la date vient d'une extrapolation : si la
- * date estimée tombe hors de cette fenetre, c'est que l'estimation est fausse.
+ * date estimée tombe hors de cette fenêtre, c'est que l'estimation est fausse.
  *
  * @returns {{after: Date, before: Date, ivJumpPoints: number}|null}
  */
@@ -129,6 +129,28 @@ export function inferEarningsWindow(chains, spot, now = Date.now()) {
   };
 }
 
+/**
+ * Choisit l'échéance de référence : la plus proche de la publication parmi
+ * celles qui la précèdent, avec au moins trois jours de vie résiduelle -- en
+ * deçà, la volatilité implicite devient trop bruitée pour servir de repère.
+ *
+ * On ne se contente pas de prendre la dernière : une échéance fraîchement
+ * cotée n'a pas encore de volatilité implicite, et la retenir ferait échouer
+ * silencieusement la décomposition. On remonte donc jusqu'à trouver une
+ * référence réellement exploitable.
+ */
+export function pickReference(chains, earningsDate, now, spot) {
+  const candidates = chains
+    .filter((c) => c.expiry < earningsDate && c.expiry.getTime() - now > 3 * DAY_MS)
+    .sort((a, b) => b.expiry - a.expiry);
+
+  for (const chain of candidates) {
+    const atm = atmProfile(chain, spot);
+    if (atm?.iv) return { chain, atm };
+  }
+  return null;
+}
+
 async function loadChain(ticker, tracker) {
   const attempts = [ticker.toUpperCase(), `_${ticker.toUpperCase()}`];
   let lastError;
@@ -147,8 +169,8 @@ async function loadChain(ticker, tracker) {
 }
 
 /**
- * @param {Date|null} earningsDate Publication visee : l'échéance retenue doit
- *   la couvrir, et l'échéance de référence doit la preceder.
+ * @param {Date|null} earningsDate Publication visée : l'échéance retenue doit
+ *   la couvrir, et l'échéance de référence doit la précéder.
  */
 export async function fetchImpliedMove(ticker, tracker, earningsDate = null) {
   const payload = await loadChain(ticker, tracker);
@@ -172,15 +194,9 @@ export async function fetchImpliedMove(ticker, tracker, earningsDate = null) {
   const tPost = Math.max(1, (post.expiry.getTime() - now) / DAY_MS) / YEAR_DAYS;
   const straddleMovePercent = (postAtm.straddle / spot) * 100;
 
-  // Échéance de référence : la dernière qui précède la publication, avec au
-  // moins trois jours de vie résiduelle (en deca, la volatilité implicite
-  // devient trop bruitee pour servir de référence).
-  const reference = earningsDate
-    ? [...chains]
-        .reverse()
-        .find((c) => c.expiry < earningsDate && c.expiry.getTime() - now > 3 * DAY_MS)
-    : null;
-  const referenceAtm = reference ? atmProfile(reference, spot) : null;
+  const picked = earningsDate ? pickReference(chains, earningsDate, now, spot) : null;
+  const reference = picked?.chain ?? null;
+  const referenceAtm = picked?.atm ?? null;
 
   let impliedMovePercent = straddleMovePercent;
   let method = 'straddle';

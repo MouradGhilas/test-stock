@@ -204,7 +204,7 @@ export async function fetchEarningsDate(ticker, tracker, surprises = []) {
   const projected = projectNextEarnings(surprises);
   if (!projected) return null;
 
-  // Le calendrier officiel ne porte que sur les semaines a venir : au-dela,
+  // Le calendrier officiel ne porte que sur les semaines à venir : au-dela,
   // le balayage coute une dizaine de requêtes pour rien.
   const horizon = daysBetween(new Date(), projected.date);
   if (horizon !== null && horizon <= 35) {
@@ -232,13 +232,13 @@ function parseTiming(text) {
 }
 
 /**
- * Extrapole la prochaîne publication a partir des dates passées.
+ * Extrapole la prochaîne publication à partir des dates passées.
  *
  * L'ancrage le plus fiable est annuel : une société publie son trimestre
  * fiscal a peu pres a la même date d'une annee sur l'autre. On prend donc la
  * publication du même trimestre un an plus tot et on ajoute 52 semaines, ce
  * qui conserve aussi le jour de semaine. Sans quatre trimestres d'historique,
- * on retombe sur l'écart median entre publications (~91 jours), nettement
+ * on retombe sur l'écart médian entre publications (~91 jours), nettement
  * moins fiable pour les sociétés au calendrier fiscal decale.
  */
 export function projectNextEarnings(surprises, now = new Date()) {
@@ -280,8 +280,8 @@ export function projectNextEarnings(surprises, now = new Date()) {
 }
 
 /**
- * Cherche le ticker dans le calendrier officiel, sur une fenetre de jours
- * ouvres autour de la date visee. Les jours sont interroges en parallele et
+ * Cherche le ticker dans le calendrier officiel, sur une fenêtre de jours
+ * ouvres autour de la date visee. Les jours sont interroges en parallèle et
  * on retient la correspondance la plus proche de l'estimation.
  */
 async function confirmInCalendar(ticker, aroundDate, tracker) {

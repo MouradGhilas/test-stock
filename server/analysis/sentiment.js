@@ -114,7 +114,7 @@ export function analyzeSentiment(articles, now = new Date()) {
     overall,
     articles: scored,
     counts: { positive, negative, neutral, total: scored.length, withSignal },
-    // La confiance depend du nombre de titres reellement porteurs de signal.
+    // La confiance dépend du nombre de titres reellement porteurs de signal.
     confidence: isNum(withSignal) ? clamp(withSignal / 10, 0, 1) : 0,
   };
 }

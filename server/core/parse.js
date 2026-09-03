@@ -116,7 +116,7 @@ export function decodeEntities(text) {
     .trim();
 }
 
-/** Retire les balises HTML d'un fragment scrape. */
+/** Retire les balises HTML d'un fragment scrapé. */
 export function stripTags(html) {
   return decodeEntities(String(html || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 }

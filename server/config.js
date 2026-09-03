@@ -1,7 +1,7 @@
 /**
  * Configuration centrale de l'application.
- * Toutes les valeurs "reglables" (poids, seuils, TTL) vivent ici pour qu'on
- * puisse calibrer le moteur de décision sans toucher a la logique.
+ * Toutes les valeurs "réglables" (poids, seuils, TTL) vivent ici pour qu'on
+ * puisse calibrer le moteur de décision sans toucher à la logique.
  */
 
 export const CONFIG = {
@@ -20,7 +20,7 @@ export const CONFIG = {
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
       '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    // Contact technique expose a EDGAR, qui l'exige dans le User-Agent.
+    // Contact technique exposé à EDGAR, qui l'exige dans le User-Agent.
     secUserAgent: process.env.SEC_USER_AGENT || 'test-stock/1.0 (contact: analyse@example.com)',
   },
 
@@ -37,46 +37,85 @@ export const CONFIG = {
   },
 
   analysis: {
-    // Fenetre d'historique de prix demandée (jours calendaires).
-    historyDays: 420,
+    // Fenêtre d'historique de prix demandée (jours calendaires).
+    // Nasdaq plafonne à cinq ans d'historique : on prend tout, car la
+    // profondeur conditionne le nombre de réactions mesurables.
+    historyDays: 1825,
+    // Profondeur des publications recherchées chez EDGAR. Au-delà de cinq ans,
+    // il n'y a plus de prix en face pour mesurer la réaction.
+    earningsHistoryYears: 5,
+    // Séances de cours renvoyées au graphique.
+    chartSessions: 252,
     // Nombre de titres d'actualité pris en compte.
     newsLimit: 40,
-    // Au-dela, l'échéance est trop lointaine pour un pari "pre-résultats".
+    // Au-delà, l'échéance est trop lointaine pour un pari "pré-résultats".
     maxDaysToEarnings: 45,
-    // En deca, on considere qu'on entre dans la zone la plus risquee.
+    // En deçà, on considère qu'on entre dans la zone la plus risquée.
     lastCallDays: 1,
 
     // Poids des facteurs. La somme fait 100 : le score final est une moyenne
-    // pondérée ramenee a la couverture reellement disponible.
+    // pondérée ramenée à la couverture réellement disponible.
+    //
+    // Ces poids ne sont plus arbitraires. Le backtest (`npm run backtest`) a
+    // rejoué 1223 publications sur cinq ans et mesuré les deux seuls facteurs
+    // reconstituables sans historique payant : les réactions passées et la
+    // configuration technique. Verdict : rho de Spearman de -0,066, et un
+    // score élevé associé à une réaction *moins* bonne (t = -1,98). Ces deux
+    // facteurs ne prédisent pas la direction.
+    //
+    // Leur poids est donc réduit -- pas inversé. Un backtest en échantillon
+    // unique, sur un seul régime de marché, ne justifie pas de parier dans
+    // l'autre sens ; il justifie de moins s'y fier. Le poids libéré va aux
+    // facteurs qui *mesurent* un risque déjà coté par le marché plutôt que de
+    // prétendre deviner une direction.
     weights: {
-      impliedVsHistorical: 18,
-      earningsReaction: 15,
+      impliedVsHistorical: 26, // +8 : mesure ce que le marché price
+      earningsReaction: 8, //     -7 : direction non prédictive (backtest)
       surpriseRecord: 12,
       revisions: 12,
-      momentum: 12,
-      newsSentiment: 10,
+      momentum: 7, //             -5 : direction non prédictive (backtest)
+      newsSentiment: 8, //        -2 : lexique sur titres, signal ténu
       analysts: 7,
       shortInterest: 6,
       ownership: 4,
-      liquidity: 4,
+      liquidity: 10, //           +6 : risque de dérapage, mesurable
     },
 
-    // Seuils de verdict sur le score global (-100 a +100).
+    // Résultat de la dernière calibration, exposé à l'interface pour que
+    // l'utilisateur sache ce que le score ne sait pas faire.
+    calibration: {
+      date: '2026-09-03',
+      observations: 1223,
+      tickers: 70,
+      years: 5,
+      spearman: -0.066,
+      tStat: -1.98,
+      baselinePositiveRate: 0.492,
+      baselineMeanHold: 0.42,
+      testedWeight: 27,
+      note:
+        'Sur 1223 publications rejouées, les facteurs directionnels testés (réactions ' +
+        'passées, configuration technique) ne prédisent pas le sens de la réaction. La ' +
+        'réaction moyenne est nulle et le taux de hausse de 49,2 % : une pièce lancée en ' +
+        "l'air. Ce site sert à mesurer le risque d'un événement, pas à en deviner l'issue.",
+    },
+
+    // Seuils de verdict sur le score global (-100 à +100).
     thresholds: {
       enter: 30,
       cautious: 12,
       neutral: -15,
     },
 
-    // En dessous de cette couverture de données, on refusé de conclure.
+    // En dessous de cette couverture de données, on refuse de conclure.
     minCoverage: 0.45,
 
     // Garde-fous de risque (peuvent dégrader un verdict quel que soit le score).
     risk: {
-      // Mouvement implicite juge extreme : le marché price déjà un choc.
+      // Mouvement implicite jugé extrême : le marché price déjà un choc.
       impliedMoveExtremePct: 12,
       impliedMoveHighPct: 8,
-      // Liquidité minimale pour qu'une entree soit raisonnable.
+      // Liquidité minimale pour qu'une entrée soit raisonnable.
       minAvgVolume: 100_000,
       minMarketCap: 300_000_000,
       // Sur-achat technique juste avant un catalyseur.

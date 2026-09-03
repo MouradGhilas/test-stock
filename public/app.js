@@ -2,8 +2,8 @@
  * Interface : appelle /api/analyze et met en forme le rapport.
  *
  * Tout ce qui provient d'une source externe (titres de presse, noms de
- * sociétés, libelles) passe par `esc` avant insertion : le contenu scrape
- * n'est jamais injecte tel quel dans le document.
+ * sociétés, libellés) passe par `esc` avant insertion : le contenu scrapé
+ * n'est jamais injecté tel quel dans le document.
  */
 
 const form = document.getElementById('form');
@@ -99,6 +99,7 @@ function render(r) {
     renderFactors(r),
     renderReactions(r),
     renderNews(r),
+    renderCalibration(r),
     renderSources(r),
   ].join('');
 }
@@ -349,7 +350,10 @@ function renderReactions(r) {
   if (!h?.events?.length) return '';
 
   const max = Math.max(...h.events.map((e) => Math.abs(e.reactionPercent)), 1);
+  // Au-delà d'une dizaine de barres la lecture se perd ; les agrégats sous le
+  // graphique portent bien sur l'ensemble des publications.
   const rows = h.events
+    .slice(0, 10)
     .map((e) => {
       const up = e.reactionPercent >= 0;
       const width = (Math.abs(e.reactionPercent) / max) * 50;
@@ -366,14 +370,16 @@ function renderReactions(r) {
     .join('');
 
   const resolution = {
-    inferred: "seance de reaction deduite du schema de publication de la societe",
-    hint: "seance de reaction alignee sur l'horaire annonce pour la prochaîne publication",
-    default: "horaire inconnu : publication supposée après clôture",
+    filing: `séance de réaction établie sur l'horodatage des ${h.timingFromFilings} dépôts 8-K à la SEC`,
+    mixed: `horaire officiel pour ${h.timingFromFilings} publication(s) sur ${h.count}, déduit pour les autres`,
+    inferred: 'séance de réaction déduite du schéma de publication de la société',
+    hint: "séance de réaction alignée sur l'horaire annoncé pour la prochaine publication",
+    default: 'horaire inconnu : publication supposée après clôture',
   }[h.timingResolution];
 
   return `
   <div class="card">
-    <h2>Réaction du titre à ses dernières publications</h2>
+    <h2>Réaction du titre à ses dernières publications (${h.count} sur ${h.yearsCovered} ans)</h2>
     <div class="bars">${rows}</div>
     <p class="verdict-line" style="margin-top:14px">
       Le titre a monte <strong>${Math.round(h.positiveRate * 100)} %</strong> du temps,
@@ -419,6 +425,32 @@ function renderNews(r) {
   </div>`;
 }
 
+/**
+ * Ce que vaut le barème, mesuré plutôt qu'affirmé.
+ *
+ * Un score de décision qu'on n'a jamais confronté aux faits est une opinion
+ * déguisée en chiffre. Le résultat du backtest est donc affiché dans la page,
+ * y compris -- surtout -- quand il est défavorable.
+ */
+function renderCalibration(r) {
+  const c = r.config?.calibration;
+  if (!c) return '';
+
+  return `
+  <div class="card">
+    <h2>Ce que ce score sait faire, et ce qu'il ne sait pas faire</h2>
+    <p class="verdict-line">${esc(c.note)}</p>
+    <div class="stats" style="margin-top:14px">
+      <div class="stat"><div class="k">Publications rejouées</div><div class="v">${num(c.observations, 0)}</div><div class="n">${c.tickers} sociétés · ${c.years} ans</div></div>
+      <div class="stat"><div class="k">Corrélation score / réaction</div><div class="v">${num(c.spearman, 3)}</div><div class="n">Spearman · t = ${num(c.tStat, 2)}</div></div>
+      <div class="stat"><div class="k">Taux de hausse de référence</div><div class="v">${num(c.baselinePositiveRate * 100, 1)} %</div><div class="n">toutes publications confondues</div></div>
+      <div class="stat"><div class="k">Position tenue jusqu'aux résultats</div><div class="v">${pct(c.baselineMeanHold, 2)}</div><div class="n">en moyenne, soit la dérive du marché</div></div>
+      <div class="stat"><div class="k">Part du barème testée</div><div class="v">${c.testedWeight} / 100</div><div class="n">le reste n'a pas d'historique gratuit</div></div>
+      <div class="stat"><div class="k">Dernière calibration</div><div class="v" style="font-size:15px">${esc(c.date)}</div><div class="n">npm run backtest</div></div>
+    </div>
+  </div>`;
+}
+
 /** Journal intégral des appels : l'utilisateur doit pouvoir auditer la collecte. */
 function renderSources(r) {
   const rows = r.sources
@@ -437,7 +469,7 @@ function renderSources(r) {
   return `
   <div class="card">
     <details class="sources">
-      <summary>Sources scrapees — ${r.sources.length} appels, ${failed} en échec, ${(r.elapsedMs / 1000).toFixed(1)} s</summary>
+      <summary>Sources scrapées — ${r.sources.length} appels, ${failed} en échec, ${(r.elapsedMs / 1000).toFixed(1)} s</summary>
       <table class="srctable">${rows}</table>
     </details>
   </div>`;

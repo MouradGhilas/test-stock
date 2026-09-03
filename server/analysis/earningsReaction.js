@@ -1,19 +1,21 @@
 /**
  * Reconstruction des réactions passées aux publications de résultats.
  *
- * C'est la référence historique a laquelle on compare le mouvement implicite :
+ * C'est la référence historique à laquelle on compare le mouvement implicite :
  * si le marché price 8 % alors que le titre bouge historiquement de 3 %,
  * l'événement est cher payé.
  *
- * Difficulte : les sources donnent la *date* de publication, pas l'heure. Une
- * société qui publie après clôture reagit le lendemain, une société qui publie
- * avant ouverture reagit le jour même. Se tromper de séance inverse le signe
- * de la réaction et corrompt tout le facteur.
+ * Difficulté : une société qui publie après clôture réagit le lendemain, une
+ * société qui publie avant ouverture réagit le jour même. Se tromper de séance
+ * inverse le signe de la réaction et corrompt tout le facteur.
  *
- * On ne devine donc pas séance par séance : on identifie le schéma de
- * publication de la société, puis on l'applique uniformement. Quand une
- * séance bouge deux fois plus que l'autre et dépasse 1,5 %, elle designe sans
- * ambiguite le moment de publication ; ces trimestres "nets" votent, la
+ * Quand l'horaire est connu -- les dépôts 8-K de la SEC sont horodatés à la
+ * seconde -- la question ne se pose pas : on l'utilise. C'est le cas nominal.
+ *
+ * Sinon, on ne devine pas séance par séance : on identifie le schéma de
+ * publication de la société, puis on l'applique uniformément. Quand une
+ * séance bouge deux fois plus que l'autre et dépasse 1,5 %, elle désigne sans
+ * ambiguïté le moment de publication ; ces trimestres "nets" votent, la
  * majorité l'emporte, et le schéma retenu sert pour tous les trimestres --
  * y compris ceux ou la réaction fut trop faible pour trancher seule.
  */
@@ -23,7 +25,7 @@ import { median, mean, isNum } from '../core/stats.js';
 const VOTE_RATIO = 2;
 const VOTE_MIN_MOVE = 1.5;
 
-/** Index de la séance correspondant a la date, ou la dernière séance anterieure. */
+/** Index de la séance correspondant à la date, ou la dernière séance antérieure. */
 function sessionIndex(bars, date) {
   const target = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
   let found = -1;
@@ -43,7 +45,7 @@ const changeBetween = (bars, from, to) => {
 };
 
 /**
- * Determine si une publication designe sans ambiguite sa séance de réaction.
+ * Détermine si une publication désigne sans ambiguïté sa séance de réaction.
  * @returns {'before-open'|'after-close'|null}
  */
 function vote(sameDay, nextDay) {
@@ -56,7 +58,8 @@ function vote(sameDay, nextDay) {
 
 /**
  * @param {Array} bars           Bougies quotidiennes, ordre croissant.
- * @param {Array} reports        Publications passées ({ reportedAt, surprisePercent }).
+ * @param {Array} reports        Publications passées ({ reportedAt, timing?, surprisePercent? }).
+ *                               Un `timing` renseigné (dépôt SEC) prime sur toute déduction.
  * @param {string|null} hint     Horaire connu de la prochaîne publication, utilise
  *                               comme indice quand l'historique ne tranche pas.
  */
@@ -78,9 +81,11 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
   }
   if (!candidates.length) return null;
 
-  // Passe 2 : le schéma de publication de la société, par vote des trimestres nets.
+  // Passe 2 : le schéma de publication de la société, par vote des trimestres
+  // nets -- et seulement pour les publications dont l'horaire est inconnu.
   const tally = { 'after-close': 0, 'before-open': 0 };
   for (const c of candidates) {
+    if (c.report.timing) continue;
     const ballot = vote(c.sameDay, c.nextDay);
     if (ballot) tally[ballot] += 1;
   }
@@ -99,10 +104,16 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
     resolution = 'default';
   }
 
-  // Passe 3 : application uniforme du schéma retenu.
+  // Passe 3 : horaire déposé quand il existe, schéma déduit sinon.
   const events = [];
+  let dated = 0;
   for (const c of candidates) {
-    const useNextDay = timing === 'after-close';
+    const effective = c.report.timing || timing;
+    if (c.report.timing) dated += 1;
+
+    // Une publication en séance, comme une publication avant ouverture, se
+    // lit sur la séance du jour même.
+    const useNextDay = effective === 'after-close';
     const reaction = useNextDay ? c.nextDay : c.sameDay;
     const reactionDate = useNextDay ? bars[c.index + 1]?.date : bars[c.index].date;
     if (reaction === null || !reactionDate) continue;
@@ -111,6 +122,8 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
       reportedAt: c.report.reportedAt,
       reactionDate,
       reactionPercent: reaction,
+      timing: effective,
+      timingKnown: Boolean(c.report.timing),
       candidates: { sameDay: c.sameDay, nextDay: c.nextDay },
       // Parcours des cinq séances précédant la publication : une forte hausse
       // avant l'événement signale des attentes déjà élevées.
@@ -123,15 +136,20 @@ export function analyzeEarningsReactions(bars, reports, hint = null) {
   const reactions = events.map((e) => e.reactionPercent);
   const positives = reactions.filter((r) => r > 0).length;
 
+  // La résolution dit sur quoi repose réellement la mesure : un horaire
+  // officiellement déposé n'a pas la même valeur qu'une déduction.
+  const overall = dated === candidates.length ? 'filing' : dated > 0 ? 'mixed' : resolution;
+
   return {
     events: events.sort((a, b) => b.reportedAt - a.reportedAt),
     count: events.length,
     timing,
-    timingResolution: resolution,
+    timingResolution: overall,
+    timingFromFilings: dated,
     timingVotes: tally,
     medianAbsMove: median(reactions.map(Math.abs)),
     maxAbsMove: Math.max(...reactions.map(Math.abs)),
-    // La plus forte amplitude peut etre une hausse : pour dimensionner un
+    // La plus forte amplitude peut être une hausse : pour dimensionner un
     // risque, seule la pire baisse est pertinente.
     worstDrop: reactions.some((r) => r < 0) ? Math.abs(Math.min(...reactions)) : null,
     medianMove: median(reactions),
