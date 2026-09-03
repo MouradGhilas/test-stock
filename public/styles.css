@@ -216,3 +216,21 @@ details.sources summary::marker { color: var(--faint); }
 .cal-item .when { color: var(--faint); font-size: 11.5px; margin-top: 4px; }
 .cal-item .when b { color: var(--muted); font-weight: 500; }
 .cal-more { margin-top: 14px; color: var(--faint); font-size: 12.5px; }
+
+/* ---------- Degré d'anticipation ---------- */
+.antic-score { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.antic-value { font-family: var(--mono); font-size: 44px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
+.antic-value span { font-size: 16px; color: var(--faint); font-weight: 400; }
+.antic-body { flex: 1 1 300px; min-width: 260px; }
+.antic-label { margin: 0 0 8px; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.antic-track { background: var(--surface-2); border-radius: 5px; height: 6px; overflow: hidden; }
+.antic-track.big { height: 10px; margin-bottom: 10px; }
+.antic-track span { display: block; height: 100%; border-radius: 5px; }
+.antic-list { margin-top: 20px; border-top: 1px solid var(--border); }
+.antic-row { padding: 13px 0; border-bottom: 1px solid var(--border); }
+.antic-row:last-child { border-bottom: 0; }
+.antic-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 7px; }
+.antic-head .nm { font-weight: 600; font-size: 14px; }
+.antic-head .meta { color: var(--faint); font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+.antic-read { margin: 7px 0 0; color: var(--muted); font-size: 13.5px; }
+.antic-read.faint, .verdict-line.faint { color: var(--faint); }

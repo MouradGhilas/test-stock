@@ -3,7 +3,7 @@
  * Les bougies sont attendues par ordre chronologique croissant.
  */
 
-import { mean, stdev, isNum } from '../core/stats.js';
+import { mean, median, stdev, isNum } from '../core/stats.js';
 
 const closes = (bars) => bars.map((b) => b.close).filter(isNum);
 
@@ -86,6 +86,36 @@ export function performance(bars, sessions) {
   return from > 0 ? ((to - from) / from) * 100 : null;
 }
 
+/**
+ * Afflux de volume : volume moyen des dernières séances rapporté au régime
+ * habituel du titre.
+ *
+ * Un volume qui double avant une publication signale que des intervenants se
+ * positionnent déjà. C'est l'un des rares indices publics qu'un mouvement est
+ * en train d'être construit -- pas de savoir par qui, mais de savoir qu'on
+ * n'arrive pas le premier.
+ *
+ * @param {number} recent    Séances récentes à mesurer.
+ * @param {number} baseline  Séances de référence, prises avant la fenêtre récente.
+ */
+export function volumeSurge(bars, recent = 5, baseline = 60) {
+  if (!bars || bars.length < recent + baseline) return null;
+
+  const volumes = bars.map((b) => b.volume).filter(isNum);
+  if (volumes.length < recent + baseline) return null;
+
+  const late = volumes.slice(-recent);
+  const before = volumes.slice(-(recent + baseline), -recent);
+
+  const lateMean = mean(late);
+  // La médiane du régime de référence résiste aux pics isolés, qui gonfleraient
+  // artificiellement la normale et masqueraient l'afflux qu'on cherche.
+  const normal = median(before);
+  if (!isNum(lateMean) || !isNum(normal) || normal <= 0) return null;
+
+  return { ratio: lateMean / normal, recentAverage: lateMean, baseline: normal };
+}
+
 /** Extremes sur 52 semaines et distance actuelle a ces extremes. */
 export function fiftyTwoWeekRange(bars) {
   const window = bars.slice(-252);
@@ -127,5 +157,6 @@ export function computeIndicators(bars) {
     perf21: performance(bars, 21),
     perf63: performance(bars, 63),
     range52w: fiftyTwoWeekRange(bars),
+    volumeSurge: volumeSurge(bars),
   };
 }

@@ -14,7 +14,7 @@ position **avant** la publication trimestrielle.
 
 ```bash
 npm start           # http://localhost:3000
-npm test            # 84 tests, sans accès réseau
+npm test            # 104 tests, sans accès réseau
 npm run backtest    # rejoue le barème sur les publications passées
 ```
 
@@ -79,6 +79,49 @@ implicite extrême, titre illiquide, couverture de données insuffisante.
 
 Verdicts possibles : **Entrer**, **Entrer avec prudence**, **Rester à
 l'écart**, **Éviter**, **Données insuffisantes**.
+
+## « Est-ce déjà dans le prix ? »
+
+Question distincte de celle du verdict, et affichée séparément. Un excellent
+dossier entièrement anticipé reste un mauvais point d'entrée, et cette
+information ne se lit nulle part dans un score de qualité.
+
+Sept signaux, notés de 0 à 100 :
+
+| Signal | Ce qu'il mesure | Poids |
+| --- | --- | --- |
+| Parcours avant publication | l'avance du titre en écarts-types de **ses propres** parcours pré-résultats passés | 25 |
+| Afflux de volume | volume des cinq dernières séances rapporté au régime habituel | 20 |
+| Tension de la volatilité | volatilité implicite à 30 jours contre volatilité réalisée sur 30 séances | 20 |
+| Montée du mouvement implicite | pente du mouvement implicite depuis les observations archivées | 15 |
+| Marge vers l'objectif analystes | ce qu'il reste de potentiel avant l'objectif moyen à un an | 15 |
+| Attentes déjà relevées | révisions d'estimations des quatre dernières semaines | 10 |
+| Positionnement optionnel | rapport put/call des positions ouvertes sur l'échéance | 10 |
+
+Le parcours se juge par rapport aux habitudes du titre, pas à un seuil
+arbitraire : certaines valeurs dérivent systématiquement avant publication, ce
+n'est pas ça qu'on cherche.
+
+**Ce que ça ne fait pas.** Rien ici ne devine l'intention d'un teneur de marché
+ni ne détecte une manipulation. Ces acteurs voient le carnet d'ordres en temps
+réel ; le site travaille avec des options différées et des bougies
+quotidiennes. Prétendre les devancer serait mentir. Ce qui est mesurable, ce
+sont les **traces publiques** d'un positionnement en cours de constitution —
+elles ne disent pas qui se positionne, mais elles disent si on est encore tôt.
+
+### Le journal d'observations
+
+Aucune source gratuite ne donne l'historique de volatilité implicite : on ne
+peut pas savoir ce que le marché des options pricait il y a trois semaines,
+sauf à l'avoir noté soi-même. Chaque analyse archive donc son observation dans
+`data/snapshots/<TICKER>.jsonl` (une ligne JSON par consultation, hors dépôt
+Git).
+
+Les premières analyses d'un titre ne diront rien ; les suivantes montreront la
+pente — *« le mouvement implicite est passé de 6 % à 11 % en douze jours : le
+marché renchérit l'événement, il ne le découvre pas maintenant »*. C'est aussi
+le jeu de données point-in-time qui manquerait pour backtester un jour le
+facteur le plus lourd du barème.
 
 ## Deux points de méthode qui font la différence
 
@@ -206,12 +249,13 @@ server/
   config.js             poids, seuils, TTL de cache, garde-fous
   core/                 cache TTL, client HTTP instrumenté, parsing, statistiques
   backtest.js           rejeu des publications passées, sans fuite d'information
+  core/store.js         journal d'observations, pour la pente du mouvement implicite
   sources/              nasdaq.js, edgar.js, cboe.js, news.js
-  analysis/             indicateurs, réactions aux résultats, tonalité, verdict
+  analysis/             indicateurs, réactions, tonalité, anticipation, verdict
 public/                 interface (HTML/CSS/JS, sans framework)
 scripts/backtest.js     lanceur du backtest sur un univers de tickers
 docs/backtest.md        résultat de la calibration et sa méthode
-test/                   84 tests unitaires, sans accès réseau
+test/                   104 tests unitaires, sans accès réseau
 ```
 
 Le client HTTP apporte timeout, réessais avec backoff, plafond de requêtes

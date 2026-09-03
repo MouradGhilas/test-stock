@@ -94,6 +94,7 @@ function render(r) {
   report.innerHTML = [
     renderIdentity(r),
     renderVerdict(r),
+    renderAnticipation(r),
     renderEvent(r),
     renderPrice(r),
     renderFactors(r),
@@ -176,6 +177,68 @@ function renderVerdict(r) {
     </div>
     ${warnings ? `<h2 style="margin-top:20px">Points de vigilance</h2>${warnings}` : ''}
     ${plan ? `<h2 style="margin-top:20px">Ce que cela implique concrètement</h2>${plan}` : ''}
+  </div>`;
+}
+
+const ANTICIPATION_TONE = { faible: 'green', modere: 'blue', eleve: 'amber', extreme: 'red' };
+
+/**
+ * « Est-ce déjà dans le prix ? » — une question distincte de la qualité du
+ * dossier. Un excellent dossier entièrement anticipé reste un mauvais point
+ * d'entrée, et cette information ne se lit pas dans un score de qualité.
+ */
+function renderAnticipation(r) {
+  const a = r.anticipation;
+  if (!a || a.score === null) return '';
+
+  const tone = ANTICIPATION_TONE[a.level] || 'slate';
+  const largeur = Math.max(0, Math.min(100, a.score));
+
+  const lignes = a.signals
+    .map((s) => {
+      if (!s.available) {
+        return `
+        <div class="antic-row">
+          <div class="antic-head">
+            <span class="nm">${esc(s.label)}</span>
+            <span class="meta">non mesurable</span>
+          </div>
+          <p class="antic-read faint">${esc(s.reading)}</p>
+        </div>`;
+      }
+      const couleur = s.anticipation >= 70 ? TONE_COLOR.red
+        : s.anticipation >= 45 ? TONE_COLOR.amber
+          : TONE_COLOR.green;
+      return `
+      <div class="antic-row">
+        <div class="antic-head">
+          <span class="nm">${esc(s.label)}</span>
+          <span class="meta">${num(s.anticipation, 0)} / 100 · poids ${s.weight}</span>
+        </div>
+        <div class="antic-track"><span style="width:${s.anticipation}%;background:${couleur}"></span></div>
+        <p class="antic-read">${esc(s.reading)}</p>
+      </div>`;
+    })
+    .join('');
+
+  return `
+  <div class="card">
+    <h2>Est-ce déjà dans le prix ?</h2>
+    <div class="antic-score">
+      <div class="antic-value t-${tone}">${num(a.score, 0)}<span>/100</span></div>
+      <div class="antic-body">
+        <p class="antic-label t-${tone}">${esc(a.label)}</p>
+        <div class="antic-track big"><span style="width:${largeur}%;background:${TONE_COLOR[tone]}"></span></div>
+        <p class="verdict-line">${esc(a.summary)}</p>
+      </div>
+    </div>
+    <p class="verdict-line faint" style="margin-top:12px">
+      Ces signaux mesurent les traces publiques d'un positionnement en cours de constitution.
+      Ils ne disent pas qui se positionne, et ne détectent aucune manipulation : les
+      intervenants qui voient le carnet d'ordres en temps réel restent hors de portée
+      d'une donnée différée. Mesuré sur ${Math.round(a.coverage * 100)} % des signaux.
+    </p>
+    <div class="antic-list">${lignes}</div>
   </div>`;
 }
 
