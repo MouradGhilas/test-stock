@@ -34,7 +34,7 @@ function compact(value) {
   if (!isNum(value)) return '—';
   const units = [[1e12, 'T'], [1e9, 'Md'], [1e6, 'M'], [1e3, 'k']];
   for (const [size, suffix] of units) {
-    if (Math.abs(value) >= size) return `${(value / size).toFixed(2)} ${suffix}`;
+    if (Math.abs(value) >= size) return `${num(value / size, 2)} ${suffix}`;
   }
   return num(value, 0);
 }
@@ -475,6 +475,77 @@ function renderSources(r) {
   </div>`;
 }
 
+/* ---------------- calendrier des publications ---------------- */
+
+const calendarBody = document.getElementById('calendar-body');
+const calendarStatus = document.getElementById('calendar-status');
+
+const TIMING_SHORT = {
+  'after-close': 'après clôture',
+  'before-open': 'avant ouverture',
+  unknown: 'horaire non communiqué',
+};
+
+const jourLong = (iso) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC',
+  });
+
+/**
+ * Liste les publications à venir. C'est l'entrée naturelle dans l'outil :
+ * la question de départ n'est pas « que vaut telle action » mais « qui publie
+ * cette semaine, et lequel de ces dossiers mérite qu'on s'y arrête ».
+ */
+async function loadCalendar() {
+  try {
+    const response = await fetch('/api/calendar?days=5');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Erreur ${response.status}`);
+    if (!data.days?.length) {
+      calendarStatus.textContent = "Aucune publication annoncée sur les prochains jours ouvrés.";
+      return;
+    }
+
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+
+    calendarStatus.innerHTML =
+      `<strong>${data.retained}</strong> sociétés de plus de ${num(data.minCap / 1e9, 0)} Md$ publient ` +
+      `d'ici le ${frDate(data.to)}. Cliquez pour analyser.`;
+
+    calendarBody.innerHTML = data.days
+      .map((jour) => `
+        <div class="cal-day">
+          <div class="cal-date">
+            ${esc(jourLong(jour.date))}
+            ${jour.date === aujourdhui ? '<span class="today">aujourd\'hui</span>' : ''}
+          </div>
+          <div class="cal-list">
+            ${jour.companies.slice(0, 12).map((c) => `
+              <button class="cal-item" type="button" data-ticker="${esc(c.symbol)}">
+                <span class="cap">${compact(c.marketCap)}</span>
+                <span class="sym">${esc(c.symbol)}</span>
+                <div class="co">${esc(c.name || '')}</div>
+                <div class="when">
+                  ${esc(TIMING_SHORT[c.timing] || '')}${isNum(c.consensusEps) ? ` · BPA attendu <b>${num(c.consensusEps)}</b>` : ''}
+                </div>
+              </button>`).join('')}
+          </div>
+          ${jour.companies.length > 12 ? `<div class="cal-more">+ ${jour.companies.length - 12} autres ce jour-là</div>` : ''}
+        </div>`)
+      .join('');
+
+    for (const item of calendarBody.querySelectorAll('.cal-item')) {
+      item.addEventListener('click', () => {
+        input.value = item.dataset.ticker;
+        analyze(item.dataset.ticker);
+        document.getElementById('status').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  } catch (error) {
+    calendarStatus.textContent = `Calendrier indisponible : ${error.message}`;
+  }
+}
+
 /* ---------------- événements ---------------- */
 
 form.addEventListener('submit', (event) => {
@@ -483,15 +554,10 @@ form.addEventListener('submit', (event) => {
   if (ticker) analyze(ticker);
 });
 
-for (const chip of document.querySelectorAll('.chip')) {
-  chip.addEventListener('click', () => {
-    input.value = chip.dataset.ticker;
-    analyze(chip.dataset.ticker);
-  });
-}
-
 const initial = new URLSearchParams(location.search).get('ticker');
 if (initial) {
   input.value = initial.toUpperCase();
   analyze(initial.toUpperCase());
 }
+
+loadCalendar();

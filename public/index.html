@@ -26,17 +26,18 @@
     </form>
 
     <div class="examples">
-      <span>Exemples&nbsp;:</span>
-      <button class="chip" type="button" data-ticker="AAPL">AAPL</button>
-      <button class="chip" type="button" data-ticker="MSFT">MSFT</button>
-      <button class="chip" type="button" data-ticker="NVDA">NVDA</button>
-      <button class="chip" type="button" data-ticker="COST">COST</button>
-      <button class="chip" type="button" data-ticker="ORCL">ORCL</button>
+      <span>Ou laissez le site vous proposer les publications à venir, ci-dessous.</span>
     </div>
   </div>
 </header>
 
 <main class="wrap">
+  <section id="calendar" class="card">
+    <h2>Qui publie ses résultats prochainement</h2>
+    <p class="verdict-line" id="calendar-status">Chargement du calendrier…</p>
+    <div id="calendar-body"></div>
+  </section>
+
   <div id="status" class="msg hidden"></div>
   <div id="report"></div>
 

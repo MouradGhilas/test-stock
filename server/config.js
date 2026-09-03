@@ -46,6 +46,10 @@ export const CONFIG = {
     earningsHistoryYears: 5,
     // Séances de cours renvoyées au graphique.
     chartSessions: 252,
+    // Capitalisation minimale pour figurer au calendrier des publications :
+    // le calendrier brut est saturé de très petites valeurs sur lesquelles
+    // ni les options ni l'historique ne permettent une analyse sérieuse.
+    calendarMinMarketCap: 2_000_000_000,
     // Nombre de titres d'actualité pris en compte.
     newsLimit: 40,
     // Au-delà, l'échéance est trop lointaine pour un pari "pré-résultats".
