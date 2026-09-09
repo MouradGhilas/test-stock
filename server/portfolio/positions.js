@@ -41,6 +41,119 @@ export function suggestQuantity({ capital, riskPercent, entry, stop, side = 'lon
 }
 
 /**
+ * Stop appliqué d'office quand le signal n'en donne pas.
+ *
+ * Ce n'est pas une lecture du marché : c'est une règle de conduite -- « je sors
+ * à -5 % » -- transposée en prix. Elle vaut ce que vaut la discipline de s'y
+ * tenir, et sur un titre volatil elle sautera souvent. Son mérite est ailleurs :
+ * une ligne sans stop a une perte maximale inconnue, celle-ci ne l'a plus.
+ */
+export function defaultStop({ entry, side = 'long', percent }) {
+  if (!isNum(entry) || entry <= 0 || !isNum(percent) || percent <= 0 || percent >= 100) return null;
+  const raw = entry * (1 - (percent / 100) * dirOf(side));
+  // Deux décimales sur un titre ordinaire, quatre sous un euro : arrondir un
+  // penny stock au centime déplacerait le stop de plusieurs pour cent.
+  return round(raw, entry >= 1 ? 2 : 4);
+}
+
+/**
+ * Ce que coûte un aller-retour : frais d'entrée et de sortie réunis.
+ * @param {number} shares
+ * @param {number} entry  prix d'entrée
+ * @param {number} exit   prix de sortie envisagé
+ */
+function roundTripFees(shares, entry, exit, { feeFixed = 0, feePercent = 0 }) {
+  const variable = ((entry + exit) * shares * feePercent) / 100;
+  return 2 * feeFixed + variable;
+}
+
+/**
+ * « Combien de titres acheter ? »
+ *
+ * Deux questions distinctes, que l'écran ne doit pas confondre :
+ *
+ *  - **Combien risquer** : la taille qui met en jeu le pourcentage de capital
+ *    choisi si le stop est touché. C'est la seule qui protège le compte.
+ *  - **À partir de combien ça vaut la peine** : en dessous d'une certaine
+ *    taille, les frais d'aller-retour prennent une part absurde du gain visé.
+ *    Un gain de 12 € amputé de 4 € de frais n'est pas un trade, c'est un
+ *    virement au courtier.
+ *
+ * Aucune taille ne rend un trade gagnant -- elle ne change que la somme en jeu.
+ * Ce que le calcul dit, c'est à partir de quand les frais cessent de manger le
+ * résultat, et quel prix il faut dépasser pour gagner un centime.
+ */
+export function tradePlan({ entry, stop, target = null, side = 'long', settings = {} } = {}) {
+  const p = CONFIG.portfolio;
+  const capital = isNum(settings.capital) ? settings.capital : p.defaultCapital;
+  const riskPercent = isNum(settings.riskPerTradePct) ? settings.riskPerTradePct : p.riskPerTradePct;
+  const fees = {
+    feeFixed: isNum(settings.feeFixed) ? settings.feeFixed : p.feeFixed,
+    feePercent: isNum(settings.feePercent) ? settings.feePercent : p.feePercent,
+  };
+  const hasFees = fees.feeFixed > 0 || fees.feePercent > 0;
+
+  if (!isNum(entry) || entry <= 0) return null;
+
+  const direction = dirOf(side);
+  const quantity = suggestQuantity({ capital, riskPercent, entry, stop, side });
+  const riskPerShare = isNum(stop) ? (entry - stop) * direction : null;
+
+  /* --- Prix mort : en deçà, l'aller-retour est perdant --- */
+  // Résolution de (sortie - entrée) x titres = frais(entrée, sortie, titres).
+  const f = fees.feePercent / 100;
+  const breakEven =
+    quantity && f < 1
+      ? round(
+          direction > 0
+            ? (entry * (1 + f) + (2 * fees.feeFixed) / quantity) / (1 - f)
+            : (entry * (1 - f) - (2 * fees.feeFixed) / quantity) / (1 + f),
+          entry >= 1 ? 2 : 4,
+        )
+      : null;
+
+  /* --- Taille minimale pour que les frais ne dévorent pas le gain visé --- */
+  let minQuantity = null;
+  let feeWarning = null;
+
+  if (hasFees && isNum(target)) {
+    const gross = Math.abs(target - entry);
+    const share = p.maxFeeShareOfGain / 100;
+    const marginPerShare = share * gross - f * (entry + target);
+
+    if (marginPerShare <= 0) {
+      // Les frais proportionnels seuls dépassent déjà la part tolérée : aucune
+      // taille n'y change rien, seul un objectif plus lointain le pourrait.
+      feeWarning = `À ${fees.feePercent} % par ordre, les frais prennent plus de ${p.maxFeeShareOfGain} % du gain visé quelle que soit la taille.`;
+    } else {
+      minQuantity = Math.ceil((2 * fees.feeFixed) / marginPerShare) || 1;
+    }
+  }
+
+  const atTarget = isNum(target) && quantity ? (target - entry) * direction * quantity : null;
+  const atStop = isNum(riskPerShare) && quantity ? -riskPerShare * quantity : null;
+
+  return {
+    quantity,
+    riskPerShare: round(riskPerShare, 4),
+    riskAmount: isNum(riskPerShare) && quantity ? round(riskPerShare * quantity, 2) : null,
+    riskPercent,
+    capital,
+    notional: quantity ? round(quantity * entry, 2) : null,
+    fees: {
+      declared: hasFees,
+      roundTrip: quantity ? round(roundTripFees(quantity, entry, isNum(target) ? target : entry, fees), 2) : null,
+      breakEven,
+    },
+    minQuantity,
+    feeWarning,
+    // Résultat net des frais aux deux bornes du plan.
+    netAtTarget: isNum(atTarget) && quantity ? round(atTarget - roundTripFees(quantity, entry, target, fees), 2) : null,
+    netAtStop: isNum(atStop) && quantity ? round(atStop - roundTripFees(quantity, entry, stop, fees), 2) : null,
+  };
+}
+
+/**
  * Enrichit un trade d'un prix de marché : P&L, multiple de R, distances,
  * alertes. Un prix absent (source en panne) n'est pas une erreur -- la ligne
  * s'affiche sans valorisation.

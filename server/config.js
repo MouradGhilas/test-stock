@@ -38,6 +38,19 @@ export const CONFIG = {
     defaultCapital: 10_000,
     // Risque cible par position, utilisé par le calculateur de taille.
     riskPerTradePct: 1,
+    // Distance de sortie appliquée d'office quand le signal ne donne pas de
+    // stop -- le cas le plus fréquent. C'est une règle de conduite personnelle,
+    // pas une lecture du marché : elle vaut ce que vaut la discipline de s'y
+    // tenir, et un titre volatil la déclenchera souvent.
+    defaultStopPercent: 5,
+    // Frais de courtage, par ordre. Zéro par défaut : beaucoup de courtiers
+    // n'en prennent plus, et inventer un montant fausserait le seuil de
+    // rentabilité plus sûrement que de ne rien afficher.
+    feeFixed: 0,
+    feePercent: 0,
+    // Part du gain visé au-delà de laquelle les frais rendent le trade absurde.
+    // Sert à calculer la taille minimale qui vaut la peine d'être prise.
+    maxFeeShareOfGain: 20,
     // Au-delà, la position pèse trop lourd pour une idée venue d'un tweet.
     maxRiskPerTradePct: 2,
     // Somme des pertes si tous les stops sautaient le même jour. C'est le

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { enrich, summarize, traderScoreboard, suggestQuantity } from '../server/portfolio/positions.js';
+import {
+  enrich, summarize, traderScoreboard, suggestQuantity, defaultStop, tradePlan,
+} from '../server/portfolio/positions.js';
 
 const SETTINGS = { capital: 10_000, riskPerTradePct: 1, currency: 'USD' };
 
@@ -255,4 +257,72 @@ test('une ligne sans cotation compte quand même dans l exposition', () => {
   ];
   const s = summarize(positions, { settings: SETTINGS });
   assert.equal(s.exposure, 1000 + 1050, 'la première ligne compte à son prix de revient');
+});
+
+/* --- Stop appliqué d'office --- */
+
+test('la règle de sortie place le stop du bon côté selon le sens', () => {
+  assert.equal(defaultStop({ entry: 100, side: 'long', percent: 5 }), 95);
+  assert.equal(defaultStop({ entry: 100, side: 'short', percent: 5 }), 105, 'une vente se protège au-dessus');
+  assert.equal(defaultStop({ entry: 5.0092, side: 'long', percent: 5 }), 4.76, 'arrondi au centime');
+  assert.equal(defaultStop({ entry: 0.42, side: 'long', percent: 5 }), 0.399, 'quatre décimales sous un euro');
+});
+
+test('un stop d office impossible vaut null plutôt qu un nombre douteux', () => {
+  assert.equal(defaultStop({ entry: null, percent: 5 }), null);
+  assert.equal(defaultStop({ entry: 100, percent: 0 }), null);
+  assert.equal(defaultStop({ entry: 100, percent: 150 }), null, 'un stop sous zéro n a pas de sens');
+});
+
+/* --- Combien de titres acheter --- */
+
+test('la taille au risque et la perte au stop se répondent', () => {
+  const plan = tradePlan({ entry: 100, stop: 95, target: 120, settings: SETTINGS });
+  assert.equal(plan.quantity, 20, '100 de budget de risque, 5 par titre');
+  assert.equal(plan.riskAmount, 100);
+  assert.equal(plan.notional, 2000);
+  assert.equal(plan.netAtTarget, 400, 'sans frais, le net est le brut');
+  assert.equal(plan.netAtStop, -100);
+});
+
+test('sans frais renseignés, aucun seuil de rentabilité n est inventé', () => {
+  const plan = tradePlan({ entry: 100, stop: 95, target: 120, settings: SETTINGS });
+  assert.equal(plan.fees.declared, false);
+  assert.equal(plan.minQuantity, null);
+  assert.equal(plan.fees.breakEven, 100, 'sans frais, le prix mort est le prix payé');
+});
+
+test('avec des frais, le prix mort et la taille minimale se calculent', () => {
+  const settings = { ...SETTINGS, feeFixed: 5, feePercent: 0 };
+  const plan = tradePlan({ entry: 100, stop: 95, target: 120, settings });
+
+  assert.equal(plan.fees.roundTrip, 10, 'deux ordres à 5');
+  assert.equal(plan.fees.breakEven, 100.5, '10 de frais répartis sur 20 titres');
+  assert.equal(plan.netAtTarget, 390);
+  assert.equal(plan.netAtStop, -110, 'les frais s ajoutent à la perte');
+
+  // 20 % de 20 de gain par titre = 4 ; 10 de frais fixes / 4 = 2,5 -> 3 titres.
+  assert.equal(plan.minQuantity, 3);
+});
+
+test('des frais proportionnels trop lourds ne se corrigent pas par la taille', () => {
+  // 3 % par ordre sur un objectif à +5 % : quelle que soit la taille, les frais
+  // prennent plus du cinquième du gain.
+  const settings = { ...SETTINGS, feeFixed: 0, feePercent: 3 };
+  const plan = tradePlan({ entry: 100, stop: 95, target: 105, settings });
+
+  assert.equal(plan.minQuantity, null);
+  assert.match(plan.feeWarning, /quelle que soit la taille/);
+});
+
+test('sans stop exploitable, le plan ne propose pas de taille', () => {
+  assert.equal(tradePlan({ entry: 100, stop: null, settings: SETTINGS }).quantity, null);
+  assert.equal(tradePlan({ entry: null, stop: 95, settings: SETTINGS }), null);
+});
+
+test('le plan d une vente à découvert est symétrique', () => {
+  const plan = tradePlan({ entry: 100, stop: 105, target: 90, side: 'short', settings: SETTINGS });
+  assert.equal(plan.quantity, 20);
+  assert.equal(plan.netAtTarget, 200, '10 de gain par titre');
+  assert.equal(plan.netAtStop, -100);
 });
