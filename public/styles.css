@@ -234,3 +234,134 @@ details.sources summary::marker { color: var(--faint); }
 .antic-head .meta { color: var(--faint); font-size: 12px; font-family: var(--mono); white-space: nowrap; }
 .antic-read { margin: 7px 0 0; color: var(--muted); font-size: 13.5px; }
 .antic-read.faint, .verdict-line.faint { color: var(--faint); }
+
+/* ---------- Suivi des positions copiées ---------- */
+.nav { display: flex; gap: 12px; align-items: center; font-size: 13px; margin-bottom: 14px; }
+.nav a { color: var(--muted); text-decoration: none; }
+.nav a:hover { color: var(--blue); }
+.nav span { color: var(--faint); }
+
+.home-link { display: inline-block; margin-top: 14px; color: var(--blue); font-size: 13.5px; text-decoration: none; }
+.home-link:hover { text-decoration: underline; }
+
+.settings { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 20px; font-size: 13px; color: var(--muted); }
+.settings label { display: flex; gap: 7px; align-items: center; }
+.settings input {
+  width: 108px; padding: 7px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: var(--mono); font-size: 13.5px;
+}
+.settings input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.settings button {
+  padding: 7px 15px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer;
+}
+.settings button:hover { border-color: var(--blue); }
+.settings-note { color: var(--green); font-size: 12.5px; }
+
+/* --- Collage du signal --- */
+#signal-text {
+  width: 100%; padding: 12px 14px; resize: vertical;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font-family: var(--mono); font-size: 13.5px; line-height: 1.5;
+}
+#signal-text:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+#signal-text::placeholder { color: var(--faint); }
+
+.paste-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.paste-actions button {
+  padding: 9px 18px; border: 0; border-radius: 9px;
+  background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.paste-actions button:hover { background: #5b9fe4; }
+.paste-actions button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+.paste-actions button.ghost:hover { border-color: var(--blue); color: var(--text); }
+
+.signal-read { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.signal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 1px; background: var(--border); border-radius: 10px; overflow: hidden; }
+.signal-cell { background: var(--surface-2); padding: 11px 13px; }
+.signal-cell .k { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.signal-cell .v { font-family: var(--mono); font-size: 16px; margin-top: 3px; }
+.signal-cell .n { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+/* --- Formulaire de position --- */
+.trade-form { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.trade-form .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; }
+.trade-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.trade-form label.wide { grid-column: 1 / -1; }
+.trade-form input, .trade-form select {
+  padding: 9px 11px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 14px;
+}
+.trade-form input:focus, .trade-form select:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.sizing { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+.sizing strong { color: var(--text); font-family: var(--mono); }
+
+button.link {
+  background: none; border: 0; padding: 0 2px; cursor: pointer;
+  color: var(--blue); font-size: 13px; font-family: inherit;
+}
+button.link:hover { text-decoration: underline; }
+button.link.danger { color: var(--red); }
+
+/* --- Barre d'actions groupées --- */
+.toolbar { margin-bottom: 16px; }
+.select-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.select-row .count { color: var(--muted); }
+.batch-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.batch {
+  padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: inherit;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+}
+.batch:hover:not(:disabled) { border-color: var(--blue); background: #1c2635; }
+.batch:disabled { opacity: 0.4; cursor: not-allowed; }
+.batch.danger { color: #f0b3ae; }
+.batch.danger:hover:not(:disabled) { border-color: var(--red); }
+.trail { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+.trail input {
+  width: 62px; padding: 8px 9px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 13px;
+}
+
+/* --- Tableau des positions --- */
+.table-scroll { overflow-x: auto; }
+table.positions { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.positions th {
+  text-align: left; padding: 0 10px 9px; color: var(--faint);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+table.positions td { padding: 11px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.positions tr:last-child td { border-bottom: 0; }
+table.positions .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+table.positions th.num { text-align: right; }
+table.positions tr.flagged td { background: #1b1414; }
+table.positions .sym { font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+table.positions .sub { color: var(--faint); font-size: 11.5px; margin-top: 2px; font-family: var(--sans); }
+table.positions .actions { white-space: nowrap; text-align: right; }
+.side { font-size: 11px; font-family: var(--sans); font-weight: 500; padding: 1px 6px; border-radius: 5px; }
+.side.long { color: var(--green); border: 1px solid currentColor; }
+.side.short { color: var(--amber); border: 1px solid currentColor; }
+
+.stop-input {
+  width: 84px; padding: 5px 8px; text-align: right;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px;
+  color: var(--text); font-family: var(--mono); font-size: 13px;
+}
+.stop-input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.stop-input::placeholder { color: var(--faint); font-size: 11px; }
+
+.pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.pill {
+  font-size: 10.5px; font-family: var(--mono); padding: 1px 6px;
+  border: 1px solid currentColor; border-radius: 5px; white-space: nowrap; cursor: help;
+}
+
+.attention-list li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.attention-list .sym { color: var(--text); font-weight: 600; }
+.attention-list .msgs { flex: 1 1 260px; }
+
+@media (max-width: 620px) {
+  .trade-form .fields { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+  .settings input { width: 90px; }
+}

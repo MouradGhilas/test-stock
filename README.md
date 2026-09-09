@@ -1,9 +1,14 @@
 # Faut-il entrer avant les résultats ?
 
-Site d'analyse pré-résultats. On saisit un ticker, le serveur interroge une
-dizaine de sources publiques, reconstruit le dossier du titre et rend un
-verdict argumenté, facteur par facteur, sur l'opportunité d'ouvrir une
-position **avant** la publication trimestrielle.
+Deux outils qui partagent le même socle de données publiques :
+
+1. **L'analyse pré-résultats** (`/`) — on saisit un ticker, le serveur interroge
+   une dizaine de sources publiques, reconstruit le dossier du titre et rend un
+   verdict argumenté, facteur par facteur, sur l'opportunité d'ouvrir une
+   position **avant** la publication trimestrielle.
+2. **Le suivi des positions copiées** (`/trades.html`) — on colle un signal
+   publié sur X, l'outil en extrait les niveaux, puis suit toutes les lignes
+   ensemble : risque agrégé, alertes, actions groupées, bilan par compte suivi.
 
 > **Ce n'est pas un conseil en investissement.** L'outil agrège des données
 > publiques et applique un barème explicite ; il ne prédit pas le résultat
@@ -13,14 +18,14 @@ position **avant** la publication trimestrielle.
 ## Démarrer
 
 ```bash
-npm start           # http://localhost:3000
-npm test            # 104 tests, sans accès réseau
+npm start           # http://localhost:3000  (suivi des positions : /trades.html)
+npm test            # 161 tests, sans accès réseau
 npm run backtest    # rejoue le barème sur les publications passées
 ```
 
 Aucune dépendance à installer : le projet tourne sur Node 20+ et n'utilise que
 la bibliothèque standard. `PORT` et `HOST` sont configurables par variable
-d'environnement.
+d'environnement, `TRADES_DIR` pour l'emplacement du portefeuille.
 
 ## Deux façons d'entrer
 
@@ -206,6 +211,80 @@ les autres n'ont pas d'historique gratuit — on ne peut pas savoir ce que le
 marché des options pricait en 2023. Le détail, la méthode et les limites sont
 dans [`docs/backtest.md`](docs/backtest.md).
 
+## Suivre des positions copiées depuis X
+
+Copier des signaux publiés sur X pose un problème que l'analyse d'un titre ne
+résout pas : à partir d'une dizaine de lignes ouvertes, plus personne ne sait
+ce qu'il risque au total. C'est l'objet de `/trades.html`.
+
+### Coller le post plutôt que ressaisir
+
+Les signaux n'ont aucun format commun. `server/portfolio/signal.js` lit les
+formes courantes, dans les deux langues :
+
+```
+$NVDA long entry 178.50 SL 172 TP1 185 TP2 192
+BUY $AAPL @ 232,10 — stop 227, objectif 245
+LONG $MSFT 415-420 | Stop: 405 | Targets: 440, 455, 470
+Short TSLA below 400 | sl -3% | tp +6%
+```
+
+Il en tire le ticker, le sens, l'entrée (fourchette ramenée à son milieu), le
+stop, les objectifs, la taille annoncée et le compte auteur — repris du lien du
+post quand il y en a un. Les stops et objectifs donnés en pourcentage sont
+convertis en prix selon le sens de la position.
+
+Deux règles de conduite : **chaque champ porte son origine** (lu dans le signal,
+déduit, absent) et **rien n'est corrigé en silence**. Un stop au-dessus de
+l'entrée pour un achat est affiché tel quel, avec un avertissement ; un ticker
+deviné faute de cashtag est signalé comme deviné. La saisie reste modifiable
+avant validation, et un formulaire manuel existe pour les posts illisibles.
+
+### Le chiffre que l'écran met au centre
+
+Pas le P&L du jour : **ce que coûterait la journée où tous les stops sautent**.
+C'est la somme des pertes au stop de chaque ligne, ramenée au capital. Les
+positions sans stop en sont exclues — non parce qu'elles ne risquent rien, mais
+parce que leur perte n'a pas de borne calculable ; elles sont comptées à part,
+sous leur propre alerte.
+
+Le reste suit : exposition, latent, réalisé, multiples de R, distance au stop et
+au prochain objectif, concentration par titre et par compte suivi. Les alertes
+sont des seuils explicites (`server/config.js`, section `portfolio`), pas des
+prédictions : stop franchi, objectif atteint, gain suffisant pour sécuriser le
+stop, ligne trop lourde, entrée manquée, publication de résultats imminente sur
+une ligne ouverte.
+
+Le multiple de R se mesure contre le **stop d'origine**, conservé même quand le
+stop courant est déplacé : sans cela, remonter ses stops suffirait à gonfler
+tous les R du portefeuille.
+
+### Agir sur plusieurs lignes à la fois
+
+Sélection multiple (dont « celles en alerte »), puis une décision appliquée à
+tout le lot : clôturer au dernier prix connu, remonter les stops à l'équilibre,
+poser un stop suiveur, prendre au marché les signaux restés en veille, ou
+supprimer. Chaque ligne est acceptée ou refusée **individuellement**, avec sa
+raison — solder huit lignes sur dix en disant lesquelles ont résisté vaut mieux
+que tout annuler parce qu'une cotation manquait. Un stop suiveur ne recule
+jamais : il ne se déplace que du côté qui réduit le risque.
+
+### Quel compte vous fait gagner de l'argent
+
+La vraie question du copy trading, et celle où l'outil se retient de conclure.
+Le bilan par compte affiche R moyen, taux de réussite et réalisé, mais le
+verdict reste « échantillon trop court » sous dix trades soldés, et
+« indécidable » tant que la moyenne n'est pas distinguable de zéro (test de
+Student sur les R). Un compte à +0,4 R sur six trades très dispersés n'a rien
+prouvé.
+
+### Où vivent les données
+
+`data/trades.json`, un document réécrit d'un bloc à chaque changement : fichier
+temporaire puis `rename` atomique, écritures sérialisées pour que deux requêtes
+simultanées ne s'écrasent pas. Le répertoire `data/` est ignoré par git — vos
+positions ne partent nulle part. `TRADES_DIR` permet d'en changer.
+
 ## Limites assumées
 
 - **Le calendrier n'est pas toujours confirmé.** Quand le fournisseur ne donne
@@ -227,13 +306,33 @@ dans [`docs/backtest.md`](docs/backtest.md).
   confirme pour ceux qui pouvaient être testés. Le seul élément réellement
   actionnable est le **dimensionnement** : un ordre stop ne protège pas d'un
   décalage à l'ouverture, il s'exécute après.
+- **Le suivi de positions ne parle à aucun courtier.** Il reflète ce que vous
+  saisissez : une position soldée dans l'outil ne l'est pas sur votre compte, et
+  inversement. Les prix affichés sont ceux, différés, de la source Nasdaq.
+- **La lecture d'un signal est une aide, pas une autorité.** Un post ambigu, une
+  capture d'écran, un fil en plusieurs messages : rien de tout cela n'est lu
+  correctement. Ce que l'outil n'a pas trouvé, il le dit ; ce qu'il a deviné, il
+  le marque comme deviné.
+- **Copier un inconnu reste un pari sur une personne** dont vous ignorez la
+  taille de compte, les sorties réelles et les signaux non publiés. L'outil
+  mesure ce que vous avez engagé ; il ne valide pas la démarche.
 
 ## API
 
 ```
-GET /api/calendar?days=5&minCap=2e9   → publications à venir, groupées par jour
-GET /api/analyze?ticker=AAPL          → rapport complet (JSON)
-GET /api/health                       → état du service et du cache
+GET    /api/calendar?days=5&minCap=2e9   → publications à venir, groupées par jour
+GET    /api/analyze?ticker=AAPL          → rapport complet (JSON)
+GET    /api/health                       → état du service et du cache
+
+GET    /api/trades                       → tableau de bord : positions valorisées,
+                                           risque agrégé, alertes, bilan par compte
+POST   /api/trades/parse                 → lecture d'un signal collé (sans rien enregistrer)
+POST   /api/trades                       → création d'une position
+PATCH  /api/trades/<id>                  → modification (stop, objectifs, clôture…)
+DELETE /api/trades/<id>                  → suppression
+POST   /api/trades/batch                 → action groupée : close, breakeven, trail, take, delete
+GET    /api/trades/earnings              → publications à venir sur les lignes ouvertes
+PATCH  /api/settings                     → capital et risque par position
 ```
 
 Le rapport contient l'identité du titre, les données de marché, l'événement,
@@ -252,10 +351,13 @@ server/
   core/store.js         journal d'observations, pour la pente du mouvement implicite
   sources/              nasdaq.js, edgar.js, cboe.js, news.js
   analysis/             indicateurs, réactions, tonalité, anticipation, verdict
+  portfolio/            suivi des positions : signal.js (lecture des posts),
+                        trade.js (modèle), positions.js (risque et alertes),
+                        store.js (persistance), service.js, routes.js
 public/                 interface (HTML/CSS/JS, sans framework)
 scripts/backtest.js     lanceur du backtest sur un univers de tickers
 docs/backtest.md        résultat de la calibration et sa méthode
-test/                   104 tests unitaires, sans accès réseau
+test/                   161 tests unitaires, sans accès réseau
 ```
 
 Le client HTTP apporte timeout, réessais avec backoff, plafond de requêtes

@@ -12,6 +12,9 @@ import { analyzeTicker } from './analyze.js';
 import { fetchEarningsCalendar } from './sources/nasdaq.js';
 import { createTracker } from './core/http.js';
 import { stats as cacheStats } from './core/cache.js';
+import { sendJson } from './core/respond.js';
+import { rateLimited } from './core/ratelimit.js';
+import { handlePortfolioRoute } from './portfolio/routes.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, '..', 'public');
@@ -26,33 +29,7 @@ const MIME = {
 };
 
 /* --- Limitation de debit : l'analyse sollicite une dizaine de sources --- */
-const RATE_LIMIT = { windowMs: 60_000, max: 20 };
-const hits = new Map();
-
-function rateLimited(ip) {
-  const now = Date.now();
-  const window = hits.get(ip)?.filter((t) => now - t < RATE_LIMIT.windowMs) ?? [];
-  window.push(now);
-  hits.set(ip, window);
-
-  // Purge opportuniste pour éviter que la table ne grossisse indéfiniment.
-  if (hits.size > 1000) {
-    for (const [key, times] of hits) {
-      if (!times.some((t) => now - t < RATE_LIMIT.windowMs)) hits.delete(key);
-    }
-  }
-  return window.length > RATE_LIMIT.max;
-}
-
-function sendJson(res, status, payload) {
-  const body = JSON.stringify(payload);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-  });
-  res.end(body);
-}
+const analyseLimit = (ip) => rateLimited(`analyse:${ip}`, { max: 20 });
 
 async function serveStatic(res, urlPath) {
   const relative = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
@@ -79,6 +56,10 @@ async function serveStatic(res, urlPath) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
+  // Le suivi de positions est la seule partie qui écrit : ses routes ont leur
+  // propre module, et sont les seules à accepter autre chose qu'un GET.
+  if (await handlePortfolioRoute(req, res, url)) return undefined;
+
   if (req.method !== 'GET') {
     return sendJson(res, 405, { error: 'Méthode non autorisée.' });
   }
@@ -91,7 +72,7 @@ const server = http.createServer(async (req, res) => {
   // avant même de savoir quel ticker on veut regarder.
   if (url.pathname === '/api/calendar') {
     const ip = req.socket.remoteAddress || 'inconnu';
-    if (rateLimited(ip)) {
+    if (analyseLimit(ip)) {
       return sendJson(res, 429, { error: 'Trop de requêtes. Patientez une minute.' });
     }
 
@@ -110,7 +91,7 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/analyze') {
     const ip = req.socket.remoteAddress || 'inconnu';
-    if (rateLimited(ip)) {
+    if (analyseLimit(ip)) {
       return sendJson(res, 429, {
         error: "Trop de requêtes. Chaque analyse interroge une dizaine de sources : patientez une minute.",
       });
