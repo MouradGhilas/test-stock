@@ -106,12 +106,16 @@ export function updateTrade(id, patch) {
   });
 }
 
+/**
+ * Supprime des positions et rend celles qui l'ont été : l'appelant s'en sert
+ * pour effacer les captures qui les accompagnaient.
+ */
 export function deleteTrades(ids) {
   const wanted = new Set(ids);
   return mutate((portfolio) => {
-    const before = portfolio.trades.length;
+    const removed = portfolio.trades.filter((t) => wanted.has(t.id));
     portfolio.trades = portfolio.trades.filter((t) => !wanted.has(t.id));
-    return { deleted: before - portfolio.trades.length };
+    return { deleted: removed.length, removed };
   });
 }
 

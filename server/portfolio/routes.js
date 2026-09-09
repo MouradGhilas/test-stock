@@ -10,15 +10,18 @@
  * appliquée.
  */
 
-import { sendJson, readJsonBody, rejectCrossSite } from '../core/respond.js';
+import { sendJson, readJsonBody, readBinaryBody, rejectCrossSite } from '../core/respond.js';
 import { rateLimited } from '../core/ratelimit.js';
 import { parseSignal } from './signal.js';
 import { suggestQuantity } from './positions.js';
 import * as store from './store.js';
 import { buildDashboard, earningsWatch, quotesFor } from './service.js';
 import { createTracker } from '../core/http.js';
+import { normalizeTicker } from '../core/parse.js';
+import { saveImage, readImage, deleteImages, imageExists, isImageId, MAX_BYTES } from './images.js';
 
 const PREFIX = '/api/trades';
+const IMAGES = '/api/images';
 
 function badRequest(message, status = 400) {
   const error = new Error(message);
@@ -27,6 +30,25 @@ function badRequest(message, status = 400) {
 }
 
 const round2 = (value) => Math.round(value * 100) / 100;
+
+/**
+ * Une position ne peut référencer qu'une capture réellement présente sur le
+ * disque : sans ce contrôle, un identifiant inventé produirait une vignette
+ * cassée que plus rien ne viendrait expliquer.
+ */
+async function assertImagesExist(ids) {
+  for (const id of ids ?? []) {
+    if (!isImageId(id) || !(await imageExists(id))) {
+      throw badRequest('Capture introuvable : renvoyez-la depuis le formulaire.');
+    }
+  }
+}
+
+/** Efface les captures de positions supprimées : rien ne les réclamera plus. */
+async function forgetImages(trades) {
+  const ids = trades.flatMap((trade) => trade.attachments || []);
+  if (ids.length) await deleteImages(ids);
+}
 
 /* ------------------------------------------------------------------ */
 /* Actions groupées                                                    */
@@ -44,7 +66,11 @@ async function runBatch(body) {
   if (!ids.length) throw badRequest('Aucune position sélectionnée.');
 
   const action = String(body.action || '');
-  if (action === 'delete') return { action, ...(await store.deleteTrades(ids)) };
+  if (action === 'delete') {
+    const { deleted, removed } = await store.deleteTrades(ids);
+    await forgetImages(removed);
+    return { action, deleted };
+  }
 
   const { settings, trades } = await store.read();
   const selected = trades.filter((t) => ids.includes(t.id));
@@ -162,12 +188,36 @@ async function runBatch(body) {
  */
 export async function handlePortfolioRoute(req, res, url) {
   const path = url.pathname;
-  const mine = path === PREFIX || path.startsWith(`${PREFIX}/`) || path === '/api/settings';
+  const mine =
+    path === PREFIX ||
+    path.startsWith(`${PREFIX}/`) ||
+    path === IMAGES ||
+    path.startsWith(`${IMAGES}/`) ||
+    path === '/api/settings';
   if (!mine) return false;
 
   const ip = req.socket.remoteAddress || 'inconnu';
 
   try {
+    // Servir une capture, c'est lire un fichier local : cela n'a pas à
+    // consommer le quota destiné à protéger les sources externes.
+    if (req.method === 'GET' && path.startsWith(`${IMAGES}/`)) {
+      const image = await readImage(path.slice(IMAGES.length + 1));
+      if (!image) throw badRequest('Capture introuvable.', 404);
+
+      res.writeHead(200, {
+        'Content-Type': image.type,
+        'Content-Length': image.buffer.length,
+        // L'identifiant est unique et le contenu ne change jamais.
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        // Le type vient des octets, pas du nom : interdire au navigateur de
+        // deviner autre chose ferme la porte à un fichier déguisé.
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Disposition': 'inline',
+      });
+      res.end(image.buffer);
+      return true;
+    }
     // Le tableau de bord interroge une cotation par ligne ouverte ; il se
     // rafraîchit tout seul. Le quota est plus large que celui de l'analyse,
     // mais il existe.
@@ -176,14 +226,36 @@ export async function handlePortfolioRoute(req, res, url) {
     }
 
     if (req.method !== 'GET') {
-      const refusal = rejectCrossSite(req);
+      // L'envoi d'une capture est le seul point d'entrée binaire.
+      const accept = path === IMAGES ? 'image/' : 'application/json';
+      const refusal = rejectCrossSite(req, { accept });
       if (refusal) throw badRequest(refusal.error, refusal.status);
+    }
+
+    if (req.method === 'POST' && path === IMAGES) {
+      const image = await saveImage(await readBinaryBody(req, MAX_BYTES));
+      sendJson(res, 201, { image });
+      return true;
     }
 
     /* --- Lecture --- */
 
     if (req.method === 'GET' && path === PREFIX) {
       sendJson(res, 200, await buildDashboard());
+      return true;
+    }
+
+    // Cotation d'un titre qui n'est pas encore au portefeuille. Beaucoup de
+    // posts ne chiffrent aucune entrée -- « arrêtez de faire les rats sur le
+    // prix d'entrée » -- et la seule réponse honnête est le prix du marché.
+    if (req.method === 'GET' && path === `${PREFIX}/quote`) {
+      const ticker = normalizeTicker(url.searchParams.get('ticker'));
+      if (!ticker) throw badRequest('Ticker invalide.');
+
+      const quote = (await quotesFor([ticker], createTracker())).get(ticker);
+      if (!quote) throw badRequest(`Aucune cotation pour ${ticker}.`, 404);
+
+      sendJson(res, 200, { quote });
       return true;
     }
 
@@ -224,7 +296,9 @@ export async function handlePortfolioRoute(req, res, url) {
     }
 
     if (req.method === 'POST' && path === PREFIX) {
-      const trade = await store.createTrade(await readJsonBody(req));
+      const body = await readJsonBody(req);
+      await assertImagesExist(body.attachments);
+      const trade = await store.createTrade(body);
       sendJson(res, 201, { trade, dashboard: await buildDashboard() });
       return true;
     }
@@ -233,14 +307,24 @@ export async function handlePortfolioRoute(req, res, url) {
       const id = decodeURIComponent(path.slice(PREFIX.length + 1));
 
       if (req.method === 'PATCH') {
-        const trade = await store.updateTrade(id, await readJsonBody(req));
+        const body = await readJsonBody(req);
+        await assertImagesExist(body.attachments);
+
+        const before = (await store.read()).trades.find((t) => t.id === id);
+        const trade = await store.updateTrade(id, body);
+
+        // Une capture retirée de la position n'a plus de raison d'exister.
+        const abandoned = (before?.attachments || []).filter((img) => !trade.attachments.includes(img));
+        if (abandoned.length) await deleteImages(abandoned);
+
         sendJson(res, 200, { trade, dashboard: await buildDashboard() });
         return true;
       }
 
       if (req.method === 'DELETE') {
-        const { deleted } = await store.deleteTrades([id]);
+        const { deleted, removed } = await store.deleteTrades([id]);
         if (!deleted) throw badRequest('Position introuvable.', 404);
+        await forgetImages(removed);
         sendJson(res, 200, { deleted, dashboard: await buildDashboard() });
         return true;
       }
