@@ -15,7 +15,7 @@ une décision.
 
 ```bash
 npm start           # http://localhost:3000
-npm test            # 70 tests, sans accès réseau
+npm test            # 81 tests, sans accès réseau
 ```
 
 Aucune dépendance à installer : le projet tourne sur Node 20+ et n'utilise que
@@ -51,6 +51,38 @@ déduit, absent) et **rien n'est corrigé en silence**. Un stop au-dessus de
 l'entrée pour un achat est affiché tel quel, avec un avertissement ; un ticker
 deviné faute de cashtag est signalé comme deviné. La saisie reste modifiable
 avant validation, et un formulaire manuel existe pour les posts illisibles.
+
+## Quand le post ne chiffre rien
+
+C'est le cas le plus fréquent, et le plus mal servi par un formulaire :
+
+> `$TE` : je suis bullish les gars sur celui-ci ! J'avais tracé un falling wedge
+> mais je peux aussi le tracer en bull flag. […] Regardez le TP final, arrêtez de
+> faire les rats sur le prix d'entrée
+
+Aucun niveau n'y figure : ils sont **dans le graphique**. Le lecteur en tire ce
+qu'il peut -- le ticker, le sens, le compte auteur -- et dit franchement que
+l'entrée, le stop et les objectifs sont absents. Deux mécanismes prennent le
+relais :
+
+- **La capture s'attache à la position.** Un `Ctrl+V` n'importe où sur la page,
+  un glisser-déposer ou le sélecteur de fichier envoient l'image ; elle
+  s'affiche en vignette dans le formulaire, puis derrière une pastille `📎` sur
+  la ligne, et s'ouvre en plein écran d'un clic. C'est la seule trace de ce qui
+  a été promis, et celle qu'on relira pour savoir si la thèse tient encore.
+- **L'entrée peut être reprise du marché.** « Arrêtez de faire les rats sur le
+  prix d'entrée » veut dire : entrez maintenant. Le bouton *prix du marché*
+  interroge la cotation du ticker saisi et remplit le champ.
+
+Reste le stop, que personne ne peut deviner à votre place. Tant qu'il manque, la
+ligne porte son alerte *risque non borné* et n'entre pas dans le total du risque
+mesuré : c'est précisément ce que l'écran refuse de faire semblant de savoir.
+
+Les captures vivent dans `data/images/`, jamais ailleurs. Le type est déduit des
+octets d'en-tête et non de ce qu'annonce le navigateur : un fichier déguisé en
+image est refusé à l'envoi, et le serveur ne resservira jamais autre chose
+qu'une image. Une capture envoyée puis abandonnée est balayée au démarrage
+suivant, passé un jour.
 
 ## Le chiffre que l'écran met au centre
 
@@ -124,6 +156,9 @@ PATCH  /api/trades/<id>                  → modification (stop, objectifs, clô
 DELETE /api/trades/<id>                  → suppression
 POST   /api/trades/batch                 → action groupée : close, breakeven, trail, take, delete
 GET    /api/trades/earnings              → publications à venir sur les lignes ouvertes
+GET    /api/trades/quote?ticker=TE       → cotation d'un titre pas encore suivi
+POST   /api/images                       → envoi d'une capture (corps binaire, image/*)
+GET    /api/images/<id>                  → la capture, servie avec son vrai type
 PATCH  /api/settings                     → capital et risque par position
 GET    /api/health                       → état du service et du cache
 ```
@@ -148,21 +183,24 @@ server/
     signal.js           lecture d'un post collé depuis X
     trade.js            modèle d'une position et sa validation
     positions.js        P&L, multiples de R, risque, alertes, bilan par compte
+    images.js           captures d'écran : validation par octets, stockage, purge
     store.js            persistance atomique de data/trades.json
     service.js          assemblage du tableau de bord
     routes.js           API et actions groupées
 public/                 interface (HTML/CSS/JS, sans framework)
-test/                   70 tests unitaires, sans accès réseau
+test/                   81 tests unitaires, sans accès réseau
 ```
 
 ## Limites assumées
 
 - **Aucune liaison avec un courtier.** Une position soldée dans l'outil ne l'est
   pas sur votre compte, et inversement.
-- **La lecture d'un signal est une aide, pas une autorité.** Un post ambigu, une
-  capture d'écran, un fil en plusieurs messages : rien de tout cela n'est lu
-  correctement. Ce que l'outil n'a pas trouvé, il le dit ; ce qu'il a deviné, il
-  le marque comme deviné.
+- **La lecture d'un signal est une aide, pas une autorité.** Un post ambigu, un
+  fil en plusieurs messages, des niveaux tracés uniquement sur un graphique :
+  rien de tout cela n'est lu correctement. Ce que l'outil n'a pas trouvé, il le
+  dit ; ce qu'il a deviné, il le marque comme deviné. **Aucune lecture
+  automatique des captures** n'est faite : l'image est conservée telle quelle,
+  les niveaux restent à saisir à la main.
 - **Données différées**, jamais temps réel, et actions américaines seulement.
 - **Un stop n'est pas une protection absolue** : il s'exécute après un décalage
   à l'ouverture, pas avant. Le seul levier réellement maîtrisé est la taille de

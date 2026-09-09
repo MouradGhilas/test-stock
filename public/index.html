@@ -33,12 +33,17 @@
   <section class="card">
     <h2>Coller un signal</h2>
     <form id="paste-form" autocomplete="off">
-      <textarea id="signal-text" rows="3" placeholder="$NVDA long entry 178.50 SL 172 TP1 185 TP2 192 — collez le post tel quel, lien compris"></textarea>
+      <textarea id="signal-text" rows="3" placeholder="$NVDA long entry 178.50 SL 172 TP1 185 TP2 192 — collez le post tel quel, lien compris. Ctrl+V sur une capture l'attache à la position."></textarea>
       <div class="paste-actions">
         <button type="submit" id="parse-btn">Lire le signal</button>
         <button type="button" class="ghost" id="manual-btn">Saisir à la main</button>
+        <button type="button" class="ghost" id="pick-image">Ajouter une capture</button>
+        <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+        <span class="hint">Beaucoup de posts ne chiffrent rien : les niveaux sont dans le graphique. Collez-le (Ctrl+V) ou déposez-le ici.</span>
       </div>
     </form>
+
+    <div id="shots" class="shots"></div>
 
     <div id="signal-read" class="hidden"></div>
 
@@ -57,7 +62,10 @@
             <option value="watch">En veille (pas encore entré)</option>
           </select>
         </label>
-        <label>Entrée <input name="entry" type="number" step="any" min="0" required></label>
+        <label>Entrée
+          <input name="entry" type="number" step="any" min="0" required>
+          <button type="button" class="link" id="market-price">prix du marché</button>
+        </label>
         <label>Stop <input name="stop" type="number" step="any" min="0"></label>
         <label>Objectifs <input name="targets" placeholder="185, 192"></label>
         <label>Quantité <input name="quantity" type="number" step="any" min="0"></label>

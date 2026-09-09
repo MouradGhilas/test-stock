@@ -16,6 +16,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { normalizeTicker, toNumber } from '../core/parse.js';
+import { isImageId, MAX_PER_TRADE } from './images.js';
 
 export const SIDES = new Set(['long', 'short']);
 export const STATUSES = new Set(['watch', 'open', 'closed']);
@@ -74,6 +75,28 @@ function normalizeTargets(value, { entry, side }) {
   }
 
   return targets.sort((a, b) => (side === 'short' ? b - a : a - b));
+}
+
+/**
+ * Captures attachées : une liste d'identifiants, sans doublon.
+ *
+ * Le modèle ne garde que la référence ; les octets vivent dans `images.js`.
+ * L'existence du fichier est vérifiée par la route, pas ici : le modèle reste
+ * pur et testable sans disque.
+ */
+function normalizeAttachments(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const ids = [];
+
+  for (const item of list) {
+    if (!isImageId(item)) throw invalid('Référence de capture invalide.');
+    if (!ids.includes(item)) ids.push(item);
+  }
+
+  if (ids.length > MAX_PER_TRADE) {
+    throw invalid(`${MAX_PER_TRADE} captures au maximum par position.`);
+  }
+  return ids;
 }
 
 /**
@@ -150,6 +173,8 @@ export function normalizeNewTrade(input = {}, now = new Date()) {
       text: cleanText(input.signalText ?? input.source?.text, 600),
     },
     note: cleanText(input.note),
+    // Les captures du post : souvent le seul endroit où figurent les niveaux.
+    attachments: normalizeAttachments(input.attachments),
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -165,7 +190,7 @@ export function normalizeNewTrade(input = {}, now = new Date()) {
 /** Champs modifiables après coup. Le reste (id, dates de création) est figé. */
 const PATCHABLE = new Set([
   'ticker', 'side', 'status', 'quantity', 'entry', 'stop', 'targets',
-  'exit', 'note', 'handle', 'url', 'openedAt', 'closedAt',
+  'exit', 'note', 'handle', 'url', 'openedAt', 'closedAt', 'attachments',
 ]);
 
 /**
@@ -199,6 +224,8 @@ export function applyPatch(trade, patch = {}, now = new Date()) {
     if (next.initialStop === null || next.initialStop === undefined) next.initialStop = next.stop;
   }
   if ('note' in patch) next.note = cleanText(patch.note);
+  // Les positions créées avant l'arrivée des captures n'ont pas le champ.
+  next.attachments = normalizeAttachments('attachments' in patch ? patch.attachments : next.attachments);
   if ('handle' in patch) next.source.handle = normalizeHandle(patch.handle);
   if ('url' in patch) next.source.url = cleanText(patch.url, 300);
   if ('openedAt' in patch) next.openedAt = isoDate(patch.openedAt, next.openedAt);

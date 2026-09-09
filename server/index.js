@@ -11,6 +11,8 @@ import { CONFIG } from './config.js';
 import { stats as cacheStats } from './core/cache.js';
 import { sendJson } from './core/respond.js';
 import { handlePortfolioRoute } from './portfolio/routes.js';
+import { pruneOrphans } from './portfolio/images.js';
+import { read } from './portfolio/store.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, '..', 'public');
@@ -64,8 +66,19 @@ const server = http.createServer(async (req, res) => {
   return serveStatic(res, url.pathname);
 });
 
-server.listen(CONFIG.server.port, CONFIG.server.host, () => {
+server.listen(CONFIG.server.port, CONFIG.server.host, async () => {
   console.log(`Suivi des positions : http://localhost:${CONFIG.server.port}`);
+
+  // Une capture envoyée puis abandonnée -- collée dans le formulaire, puis
+  // « Annuler » -- ne serait réclamée par personne. On les balaie au démarrage,
+  // passé un jour, pour ne jamais toucher à celle d'un formulaire encore ouvert.
+  try {
+    const { trades } = await read();
+    const removed = await pruneOrphans(trades.flatMap((t) => t.attachments || []));
+    if (removed) console.log(`${removed} capture(s) orpheline(s) supprimée(s).`);
+  } catch {
+    // Le ménage ne doit jamais empêcher le service de démarrer.
+  }
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

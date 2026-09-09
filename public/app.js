@@ -29,6 +29,9 @@ const els = {
   capital: $('capital'),
   risk: $('risk'),
   settingsNote: $('settings-note'),
+  shots: $('shots'),
+  imageInput: $('image-input'),
+  pasteCard: $('paste-form').closest('.card'),
 };
 
 const state = {
@@ -36,6 +39,9 @@ const state = {
   selection: new Set(),
   earnings: {},
   editing: null,
+  // Captures attachées au formulaire en cours : envoyées au serveur dès le
+  // collage, rattachées à la position au moment de valider.
+  shots: [],
 };
 
 /* ---------------- utilitaires ---------------- */
@@ -159,6 +165,116 @@ async function loadEarnings() {
   } catch {
     // Bonus : son absence ne change rien au reste de l'écran.
   }
+}
+
+/* ---------------- captures d'écran ---------------- */
+
+/**
+ * Beaucoup de posts ne chiffrent rien : « regardez le TP final » renvoie au
+ * graphique. La capture est alors la seule trace des niveaux promis, et elle
+ * mérite d'être rangée avec la position plutôt que perdue dans le fil.
+ */
+async function uploadShot(file) {
+  if (!file || !file.type.startsWith('image/')) return null;
+  try {
+    const response = await fetch('/api/images', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Erreur ${response.status}`);
+    return data.image;
+  } catch (error) {
+    fail(error);
+    return null;
+  }
+}
+
+async function addShots(files) {
+  const images = [...files].filter((f) => f.type.startsWith('image/'));
+  if (!images.length) return;
+
+  // Une capture collée alors qu'aucun formulaire n'est ouvert en ouvre un :
+  // c'est souvent par là que commence la saisie d'un signal en image.
+  if (els.tradeForm.classList.contains('hidden')) fillForm({});
+
+  for (const file of images) {
+    const shot = await uploadShot(file);
+    if (shot) state.shots.push(shot);
+    renderShots();
+  }
+}
+
+function renderShots() {
+  if (!state.shots.length) {
+    els.shots.innerHTML = '';
+    els.shots.classList.remove('filled');
+    return;
+  }
+
+  els.shots.classList.add('filled');
+  els.shots.innerHTML = state.shots
+    .map(
+      (shot, index) => `
+      <figure class="shot">
+        <img src="/api/images/${esc(shot.id)}" alt="Capture ${index + 1} du signal" loading="lazy">
+        <button type="button" class="shot-remove" data-remove="${esc(shot.id)}" title="Retirer">✕</button>
+      </figure>`,
+    )
+    .join('');
+
+  for (const image of els.shots.querySelectorAll('img')) {
+    image.onclick = () => openViewer(state.shots.map((s) => s.id), [...els.shots.querySelectorAll('img')].indexOf(image));
+  }
+  for (const button of els.shots.querySelectorAll('[data-remove]')) {
+    button.onclick = () => {
+      state.shots = state.shots.filter((s) => s.id !== button.dataset.remove);
+      renderShots();
+    };
+  }
+}
+
+/** Visionneuse plein écran : une capture de graphique ne se lit pas en vignette. */
+function openViewer(ids, start = 0) {
+  if (!ids.length) return;
+  let index = Math.max(0, Math.min(start, ids.length - 1));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'viewer';
+  overlay.innerHTML = `
+    <button class="viewer-close" title="Fermer (Échap)">✕</button>
+    ${ids.length > 1 ? '<button class="viewer-nav prev" title="Précédente">‹</button>' : ''}
+    <img src="/api/images/${esc(ids[index])}" alt="Capture du signal">
+    ${ids.length > 1 ? '<button class="viewer-nav next" title="Suivante">›</button>' : ''}
+    ${ids.length > 1 ? `<div class="viewer-count">1 / ${ids.length}</div>` : ''}`;
+
+  const show = (next) => {
+    index = (next + ids.length) % ids.length;
+    overlay.querySelector('img').src = `/api/images/${ids[index]}`;
+    const count = overlay.querySelector('.viewer-count');
+    if (count) count.textContent = `${index + 1} / ${ids.length}`;
+  };
+
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+
+  function onKey(event) {
+    if (event.key === 'Escape') close();
+    if (event.key === 'ArrowRight') show(index + 1);
+    if (event.key === 'ArrowLeft') show(index - 1);
+  }
+
+  overlay.onclick = (event) => {
+    if (event.target === overlay || event.target.classList.contains('viewer-close')) close();
+    if (event.target.classList.contains('prev')) show(index - 1);
+    if (event.target.classList.contains('next')) show(index + 1);
+  };
+
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
 }
 
 /* ---------------- lecture d'un signal ---------------- */
@@ -433,6 +549,13 @@ function alertTags(position) {
  * change rien à la conduite d'un trade de swing : on ne l'affiche pas, pour
  * que le rappel garde son sens quand il apparaît.
  */
+/** Pastille « captures » : le graphique du post, à un clic de la ligne. */
+function shotBadge(position) {
+  const ids = position.attachments || [];
+  if (!ids.length) return '';
+  return `<button class="shot-badge" data-shots="${esc(ids.join(','))}" title="Voir la capture du signal">📎 ${ids.length}</button>`;
+}
+
 function earningsTag(ticker) {
   const e = state.earnings[ticker];
   if (!e || !isNum(e.days) || e.days < 0 || e.days > 21) return '';
@@ -498,6 +621,10 @@ function renderTable(d) {
     };
   }
 
+  for (const button of els.table.querySelectorAll('[data-shots]')) {
+    button.onclick = () => openViewer(button.dataset.shots.split(','));
+  }
+
   for (const button of els.table.querySelectorAll('[data-edit]')) {
     button.onclick = () => startEdit(button.dataset.edit);
   }
@@ -518,7 +645,7 @@ function row(p) {
     <td><input type="checkbox" data-id="${esc(p.id)}" ${checked} aria-label="Sélectionner ${esc(p.ticker)}"></td>
     <td>
       <div class="sym mono">${esc(p.ticker)} <span class="side ${p.side}">${esc(SIDE_LABEL[p.side])}</span></div>
-      <div class="sub">${esc(p.source.handle || 'sans auteur')}${p.ageDays ? ` · ${p.ageDays} j` : ''}</div>
+      <div class="sub">${esc(p.source.handle || 'sans auteur')}${p.ageDays ? ` · ${p.ageDays} j` : ''} ${shotBadge(p)}</div>
     </td>
     <td class="num">${watching ? '—' : num(p.quantity, 0)}</td>
     <td class="num">${num(p.entry)}</td>
@@ -619,7 +746,7 @@ function renderClosed(d) {
               <tr>
                 <td>
                   <div class="sym mono">${esc(p.ticker)} <span class="side ${p.side}">${esc(SIDE_LABEL[p.side])}</span></div>
-                  <div class="sub">${esc(p.source.handle || 'sans auteur')}${p.closedAt ? ` · ${esc(p.closedAt.slice(0, 10))}` : ''}</div>
+                  <div class="sub">${esc(p.source.handle || 'sans auteur')}${p.closedAt ? ` · ${esc(p.closedAt.slice(0, 10))}` : ''} ${shotBadge(p)}</div>
                 </td>
                 <td class="num">${num(p.quantity, 0)}</td>
                 <td class="num">${num(p.entry)}</td>
@@ -638,6 +765,9 @@ function renderClosed(d) {
 
   for (const button of els.closed.querySelectorAll('[data-delete]')) {
     button.onclick = () => runBatch('delete', { ids: [button.dataset.delete] });
+  }
+  for (const button of els.closed.querySelectorAll('[data-shots]')) {
+    button.onclick = () => openViewer(button.dataset.shots.split(','));
   }
 }
 
@@ -686,6 +816,8 @@ function startEdit(id) {
   state.editing = id;
   els.signalRead.className = 'hidden';
   els.addBtn.textContent = 'Enregistrer les modifications';
+  state.shots = (position.attachments || []).map((imageId) => ({ id: imageId }));
+  renderShots();
   fillForm({
     ticker: position.ticker,
     side: position.side,
@@ -720,11 +852,14 @@ function formValues() {
       .map(Number),
     handle: form.handle.value.trim() || null,
     note: form.note.value.trim() || null,
+    attachments: state.shots.map((shot) => shot.id),
   };
 }
 
 function resetForm() {
   state.editing = null;
+  state.shots = [];
+  renderShots();
   els.tradeForm.reset();
   els.tradeForm.classList.add('hidden');
   els.signalRead.className = 'hidden';
@@ -750,6 +885,54 @@ $('manual-btn').onclick = () => {
 };
 
 $('cancel-btn').onclick = resetForm;
+
+/* --- Captures : coller, déposer, choisir --- */
+
+// Un Ctrl+V sur une capture l'attache, où que soit le curseur. Le collage de
+// texte, lui, suit son cours normal dans la zone de saisie.
+document.addEventListener('paste', (event) => {
+  const files = [...(event.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+  if (!files.length) return;
+  event.preventDefault();
+  addShots(files);
+});
+
+els.pasteCard.addEventListener('dragover', (event) => {
+  if (![...event.dataTransfer.types].includes('Files')) return;
+  event.preventDefault();
+  els.pasteCard.classList.add('dropping');
+});
+els.pasteCard.addEventListener('dragleave', (event) => {
+  if (event.target === els.pasteCard) els.pasteCard.classList.remove('dropping');
+});
+els.pasteCard.addEventListener('drop', (event) => {
+  if (!event.dataTransfer.files.length) return;
+  event.preventDefault();
+  els.pasteCard.classList.remove('dropping');
+  addShots(event.dataTransfer.files);
+});
+
+$('pick-image').onclick = () => els.imageInput.click();
+els.imageInput.onchange = () => {
+  addShots(els.imageInput.files);
+  els.imageInput.value = '';
+};
+
+/* --- Entrée au prix du marché --- */
+
+$('market-price').onclick = async () => {
+  const ticker = els.tradeForm.ticker.value.trim();
+  if (!ticker) return fail(new Error('Saisissez d abord le ticker.'));
+
+  try {
+    const { quote } = await api(`/api/trades/quote?ticker=${encodeURIComponent(ticker)}`);
+    els.tradeForm.entry.value = quote.price;
+    updateSizing();
+    clearStatus();
+  } catch (error) {
+    fail(error);
+  }
+};
 
 els.tradeForm.oninput = updateSizing;
 

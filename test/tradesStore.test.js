@@ -183,3 +183,37 @@ test('un fichier corrompu ne fait pas perdre l application', async () => {
   const portfolio = await store.read();
   assert.deepEqual(portfolio.trades, [], 'on repart d un portefeuille vide plutôt que de planter');
 });
+
+/* ------------------------------------------------------------------ */
+/* Captures attachées                                                  */
+/* ------------------------------------------------------------------ */
+
+test('une position accepte des captures et les conserve', async () => {
+  const id = 'a'.repeat(32);
+  const trade = normalizeNewTrade({ ...SIGNAL, attachments: [id, id] });
+  assert.deepEqual(trade.attachments, [id], 'les doublons sont écartés');
+
+  const sans = applyPatch(trade, { attachments: [] });
+  assert.deepEqual(sans.attachments, [], 'on peut retirer une capture');
+});
+
+test('une référence de capture invalide est refusée', () => {
+  for (const mauvais of [['../evasion'], ['pas-un-id'], ['A'.repeat(32)], [42]]) {
+    assert.throws(() => normalizeNewTrade({ ...SIGNAL, attachments: mauvais }), /capture/i, JSON.stringify(mauvais));
+  }
+});
+
+test('une position ancienne, sans le champ, reste modifiable', () => {
+  // Les positions créées avant l'arrivée des captures n'ont pas d'`attachments`.
+  const ancienne = { ...normalizeNewTrade(SIGNAL) };
+  delete ancienne.attachments;
+  assert.deepEqual(applyPatch(ancienne, { stop: 96 }).attachments, []);
+});
+
+test('la suppression rend les positions supprimées, pour effacer leurs captures', async () => {
+  const cible = await store.createTrade({ ...SIGNAL, ticker: 'PJ', attachments: ['b'.repeat(32)] });
+  const { deleted, removed } = await store.deleteTrades([cible.id]);
+
+  assert.equal(deleted, 1);
+  assert.deepEqual(removed.map((t) => t.attachments).flat(), ['b'.repeat(32)]);
+});

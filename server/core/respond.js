@@ -56,6 +56,32 @@ export function readJsonBody(req, limit = MAX_BODY_BYTES) {
 }
 
 /**
+ * Corps binaire (une capture d'écran collée), borné lui aussi.
+ * Retourne un Buffer -- à charge de l'appelant de vérifier ce qu'il contient.
+ */
+export function readBinaryBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        const error = new Error('Fichier trop volumineux.');
+        error.status = 413;
+        req.destroy();
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+/**
  * Garde-fou des requêtes modifiantes.
  *
  * L'outil tourne sans authentification sur une machine personnelle. Rien
@@ -67,12 +93,14 @@ export function readJsonBody(req, limit = MAX_BODY_BYTES) {
  *     sans passer par une requête préalable (CORS) que le serveur refuse ;
  *   - refuser une origine explicite qui ne serait pas la nôtre.
  */
-export function rejectCrossSite(req) {
+export function rejectCrossSite(req, { accept = 'application/json' } = {}) {
   // Un DELETE n'a pas de corps : lui réclamer un type de contenu n'aurait pas
   // de sens, et un formulaire HTML ne sait de toute façon pas l'émettre.
+  // `image/` est le second type accepté, pour l'envoi d'une capture : un
+  // formulaire ne peut pas davantage le produire.
   const type = String(req.headers['content-type'] || '');
-  if (req.method !== 'DELETE' && !type.startsWith('application/json')) {
-    return { status: 415, error: 'Content-Type « application/json » attendu.' };
+  if (req.method !== 'DELETE' && !type.startsWith(accept)) {
+    return { status: 415, error: `Content-Type « ${accept} » attendu.` };
   }
 
   const origin = req.headers.origin;
