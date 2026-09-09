@@ -68,8 +68,14 @@ relais :
 - **La capture s'attache à la position.** Un `Ctrl+V` n'importe où sur la page,
   un glisser-déposer ou le sélecteur de fichier envoient l'image ; elle
   s'affiche en vignette dans le formulaire, puis derrière une pastille `📎` sur
-  la ligne, et s'ouvre en plein écran d'un clic. C'est la seule trace de ce qui
-  a été promis, et celle qu'on relira pour savoir si la thèse tient encore.
+  la ligne. C'est la seule trace de ce qui a été promis, et celle qu'on relira
+  pour savoir si la thèse tient encore.
+
+  Un clic l'ouvre dans une visionneuse qui **zoome et se déplace** : une capture
+  TradingView fait deux fois la largeur d'un écran, ajustée elle devient
+  illisible. Molette pour zoomer sous le curseur, glisser pour déplacer,
+  double-clic ou touche `1` pour la taille réelle, `0` pour réajuster, et un
+  bouton qui ouvre l'image seule dans un onglet.
 - **L'entrée peut être reprise du marché.** « Arrêtez de faire les rats sur le
   prix d'entrée » veut dire : entrez maintenant. Le bouton *prix du marché*
   interroge la cotation du ticker saisi et remplit le champ.

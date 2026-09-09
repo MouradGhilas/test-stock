@@ -250,38 +250,157 @@ function openViewer(ids, start = 0) {
   const overlay = document.createElement('div');
   overlay.className = 'viewer';
   overlay.innerHTML = `
-    <button class="viewer-close" title="Fermer (Échap)">✕</button>
-    ${ids.length > 1 ? '<button class="viewer-nav prev" title="Précédente">‹</button>' : ''}
-    <img src="/api/images/${esc(ids[index])}" alt="Capture du signal">
-    ${ids.length > 1 ? '<button class="viewer-nav next" title="Suivante">›</button>' : ''}
-    ${ids.length > 1 ? `<div class="viewer-count">1 / ${ids.length}</div>` : ''}`;
+    <div class="viewer-bar">
+      ${ids.length > 1 ? `<span class="viewer-count">${index + 1} / ${ids.length}</span>` : ''}
+      <button class="viewer-btn" data-zoom="out" title="Dézoomer (-)">−</button>
+      <button class="viewer-btn" data-zoom="fit" title="Ajuster à l'écran (0)">Ajuster</button>
+      <button class="viewer-btn zoom-label" data-zoom="full" title="Taille réelle (1)">100 %</button>
+      <button class="viewer-btn" data-zoom="in" title="Zoomer (+)">+</button>
+      <a class="viewer-btn" data-role="open" href="#" target="_blank" rel="noopener" title="Ouvrir l'image seule">Onglet</a>
+      <button class="viewer-btn" data-role="close" title="Fermer (Échap)">✕</button>
+    </div>
+    ${ids.length > 1 ? '<button class="viewer-nav prev" title="Précédente (←)">‹</button>' : ''}
+    <div class="viewer-stage"><img alt="Capture du signal" draggable="false"></div>
+    ${ids.length > 1 ? '<button class="viewer-nav next" title="Suivante (→)">›</button>' : ''}
+    <div class="viewer-hint">molette pour zoomer · glisser pour déplacer · double-clic pour la taille réelle</div>`;
 
-  const show = (next) => {
+  const stage = overlay.querySelector('.viewer-stage');
+  const image = overlay.querySelector('img');
+  const label = overlay.querySelector('.zoom-label');
+  const link = overlay.querySelector('[data-role="open"]');
+
+  // Une capture de graphique fait souvent deux fois la largeur de l'écran :
+  // ajustée, elle devient illisible. La visionneuse garde donc une échelle
+  // propre, un déplacement, et un retour immédiat à la taille réelle.
+  let scale = 1;
+  let fitScale = 1;
+  let x = 0;
+  let y = 0;
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  function apply() {
+    image.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    if (label) label.textContent = `${Math.round(scale * 100)} %`;
+    stage.classList.toggle('pannable', scale > fitScale + 0.001);
+  }
+
+  /** Recentre, et recadre pour qu'on ne perde jamais l'image hors de l'écran. */
+  function settle() {
+    const box = stage.getBoundingClientRect();
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+
+    x = width <= box.width ? (box.width - width) / 2 : clamp(x, box.width - width, 0);
+    y = height <= box.height ? (box.height - height) / 2 : clamp(y, box.height - height, 0);
+    apply();
+  }
+
+  function fit() {
+    const box = stage.getBoundingClientRect();
+    if (!image.naturalWidth) return;
+    // Jamais d'agrandissement à l'ouverture : une petite capture s'affiche à
+    // sa taille, une grande est réduite juste ce qu'il faut.
+    fitScale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight, 1);
+    scale = fitScale;
+    settle();
+  }
+
+  function zoomAt(clientX, clientY, factor) {
+    const box = stage.getBoundingClientRect();
+    const px = clientX - box.left;
+    const py = clientY - box.top;
+    const next = clamp(scale * factor, Math.min(fitScale, 0.1), 8);
+
+    // Le point sous le curseur ne bouge pas : c'est ce qui rend le zoom
+    // utilisable pour aller lire un niveau précis du graphique.
+    x = px - ((px - x) * next) / scale;
+    y = py - ((py - y) * next) / scale;
+    scale = next;
+    settle();
+  }
+
+  function show(next) {
     index = (next + ids.length) % ids.length;
-    overlay.querySelector('img').src = `/api/images/${ids[index]}`;
+    image.src = `/api/images/${ids[index]}`;
+    link.href = `/api/images/${ids[index]}`;
     const count = overlay.querySelector('.viewer-count');
     if (count) count.textContent = `${index + 1} / ${ids.length}`;
-  };
+  }
 
   const close = () => {
     overlay.remove();
     document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', fit);
   };
 
   function onKey(event) {
-    if (event.key === 'Escape') close();
-    if (event.key === 'ArrowRight') show(index + 1);
-    if (event.key === 'ArrowLeft') show(index - 1);
+    const actions = {
+      Escape: close,
+      ArrowRight: () => show(index + 1),
+      ArrowLeft: () => show(index - 1),
+      0: fit,
+      1: () => { scale = 1; settle(); },
+      '+': () => zoomAt(innerWidth / 2, innerHeight / 2, 1.25),
+      '=': () => zoomAt(innerWidth / 2, innerHeight / 2, 1.25),
+      '-': () => zoomAt(innerWidth / 2, innerHeight / 2, 0.8),
+    };
+    const action = actions[event.key];
+    if (action) {
+      event.preventDefault();
+      action();
+    }
   }
 
-  overlay.onclick = (event) => {
-    if (event.target === overlay || event.target.classList.contains('viewer-close')) close();
+  image.onload = fit;
+
+  stage.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    // Le pincement d'un pavé tactile arrive ici avec ctrlKey : même geste.
+    zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.15 : 0.87);
+  }, { passive: false });
+
+  stage.addEventListener('dblclick', (event) => {
+    if (scale > fitScale + 0.001) fit();
+    else zoomAt(event.clientX, event.clientY, 1 / scale);
+  });
+
+  stage.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    const from = { x: event.clientX - x, y: event.clientY - y };
+    stage.setPointerCapture(event.pointerId);
+    stage.classList.add('dragging');
+
+    const move = (moved) => {
+      x = moved.clientX - from.x;
+      y = moved.clientY - from.y;
+      settle();
+    };
+    const up = () => {
+      stage.classList.remove('dragging');
+      stage.removeEventListener('pointermove', move);
+      stage.removeEventListener('pointerup', up);
+    };
+
+    stage.addEventListener('pointermove', move);
+    stage.addEventListener('pointerup', up);
+  });
+
+  overlay.addEventListener('click', (event) => {
+    const zoom = event.target.dataset?.zoom;
+    if (zoom === 'in') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
+    if (zoom === 'out') zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
+    if (zoom === 'fit') fit();
+    if (zoom === 'full') { scale = 1; settle(); }
+    if (event.target.dataset?.role === 'close' || event.target === overlay) close();
     if (event.target.classList.contains('prev')) show(index - 1);
     if (event.target.classList.contains('next')) show(index + 1);
-  };
+  });
 
   document.addEventListener('keydown', onKey);
+  window.addEventListener('resize', fit);
   document.body.appendChild(overlay);
+  show(index);
 }
 
 /* ---------------- lecture d'un signal ---------------- */

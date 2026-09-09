@@ -254,24 +254,50 @@ table.positions .actions { white-space: nowrap; text-align: right; }
 }
 .shot-badge:hover { text-decoration: underline; }
 
-/* Visionneuse plein écran : une capture de graphique ne se lit pas en vignette. */
+/* Visionneuse : une capture de graphique se lit zoomée, pas ajustée. */
 .viewer {
   position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(6, 9, 15, 0.92); padding: 40px;
+  background: rgba(6, 9, 15, 0.95);
+  display: flex; flex-direction: column;
 }
-.viewer img { max-width: 100%; max-height: 100%; border-radius: 10px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6); }
-.viewer-close, .viewer-nav {
-  position: absolute; cursor: pointer; color: var(--text);
+.viewer-stage {
+  position: relative; flex: 1; overflow: hidden;
+  cursor: zoom-in; touch-action: none;
+}
+.viewer-stage.pannable { cursor: grab; }
+.viewer-stage.dragging { cursor: grabbing; }
+.viewer-stage img {
+  position: absolute; top: 0; left: 0;
+  transform-origin: 0 0; max-width: none; max-height: none;
+  user-select: none; -webkit-user-drag: none;
+}
+
+.viewer-bar {
+  display: flex; gap: 8px; align-items: center; justify-content: flex-end;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.viewer-btn {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: inherit; font-size: 13px; line-height: 1;
+  padding: 8px 13px; cursor: pointer; text-decoration: none;
+}
+.viewer-btn:hover { border-color: var(--blue); }
+.viewer-btn.zoom-label { font-family: var(--mono); min-width: 68px; }
+.viewer-count { margin-right: auto; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+
+.viewer-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
   background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
-  font-size: 20px; line-height: 1; padding: 8px 13px;
+  color: var(--text); font-size: 20px; line-height: 1; padding: 10px 15px; cursor: pointer;
 }
-.viewer-close { top: 18px; right: 18px; }
-.viewer-nav { top: 50%; transform: translateY(-50%); }
+.viewer-nav:hover { border-color: var(--blue); }
 .viewer-nav.prev { left: 18px; }
 .viewer-nav.next { right: 18px; }
-.viewer-close:hover, .viewer-nav:hover { border-color: var(--blue); }
-.viewer-count { position: absolute; bottom: 18px; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+
+.viewer-hint {
+  padding: 9px 16px; text-align: center; color: var(--faint); font-size: 12px;
+  border-top: 1px solid var(--border); background: var(--surface);
+}
 
 /* Le bouton « prix du marché » se loge sous le champ d'entrée. */
 .trade-form label #market-price { align-self: flex-start; font-size: 11.5px; }
