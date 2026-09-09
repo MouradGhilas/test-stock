@@ -28,6 +28,10 @@ const els = {
   addBtn: $('add-btn'),
   capital: $('capital'),
   risk: $('risk'),
+  stopPercent: $('stop-percent'),
+  feeFixed: $('fee-fixed'),
+  feePercent: $('fee-percent'),
+  stopNote: $('stop-note'),
   settingsNote: $('settings-note'),
   shots: $('shots'),
   imageInput: $('image-input'),
@@ -42,6 +46,9 @@ const state = {
   // Captures attachées au formulaire en cours : envoyées au serveur dès le
   // collage, rattachées à la position au moment de valider.
   shots: [],
+  // Vrai tant que le stop affiché vient de la règle de sortie et non d'une
+  // saisie : dans ce cas seulement, changer l'entrée le recalcule.
+  stopAuto: true,
 };
 
 /* ---------------- utilitaires ---------------- */
@@ -282,6 +289,9 @@ function openViewer(ids, start = 0) {
 function fillForm(values = {}) {
   const form = els.tradeForm;
   form.classList.remove('hidden');
+  // Sans stop fourni, celui qu'affichera le formulaire viendra de la règle de
+  // sortie : il reste recalculé tant que l'utilisateur n'y touche pas.
+  state.stopAuto = !isNum(values.stop);
   form.ticker.value = values.ticker ?? '';
   form.side.value = values.side ?? 'long';
   form.status.value = values.status ?? 'open';
@@ -332,6 +342,12 @@ function renderSignal(signal, suggestion) {
         : ''
     }
     ${
+      suggestion && !suggestion.stopFromSignal && isNum(suggestion.stop)
+        ? `<p class="verdict-line">Aucun stop dans le post : votre règle de sortie à
+             ${absPct(suggestion.stopPercent)} le place à <strong>${num(suggestion.stop)}</strong>.</p>`
+        : ''
+    }
+    ${
       isNum(suggestion?.quantity)
         ? `<p class="verdict-line">Taille pour risquer ${absPct(suggestion.riskPerTradePct)} de ${money(suggestion.capital)} :
              <strong>${num(suggestion.quantity, 0)} titres</strong>.</p>`
@@ -362,32 +378,106 @@ async function readSignal(text) {
 }
 
 /** Taille suggérée, recalculée à chaque frappe dans le formulaire. */
+/**
+ * Plan de taille, calculé par le serveur pendant la saisie.
+ *
+ * Deux questions que l'écran ne doit pas confondre. « Combien risquer » : la
+ * taille qui met en jeu le pourcentage de capital choisi si le stop est touché.
+ * « À partir de combien ça vaut la peine » : en dessous d'une certaine taille,
+ * les frais d'aller-retour prennent une part absurde du gain visé.
+ *
+ * Aucune des deux ne rend un trade gagnant -- la taille ne change que la somme
+ * en jeu.
+ */
+let planTimer = null;
+
 function updateSizing() {
+  clearTimeout(planTimer);
+  planTimer = setTimeout(loadPlan, 400);
+}
+
+async function loadPlan() {
   const form = els.tradeForm;
   const entry = Number(form.entry.value);
+
+  if (!Number.isFinite(entry) || entry <= 0) {
+    els.sizing.textContent = '';
+    els.stopNote.textContent = '';
+    return;
+  }
+
+  const params = new URLSearchParams({ entry, side: form.side.value });
   const stop = Number(form.stop.value);
-  const settings = state.dashboard?.settings;
-  if (!settings || !Number.isFinite(entry) || !Number.isFinite(stop) || entry <= 0 || stop <= 0) {
+  if (form.stop.value.trim() !== '' && Number.isFinite(stop) && stop > 0 && !state.stopAuto) {
+    params.set('stop', stop);
+  }
+  const target = Number(form.targets.value.split(/[,;\s]+/).filter(Boolean)[0]);
+  if (Number.isFinite(target) && target > 0) params.set('target', target);
+
+  try {
+    const data = await api(`/api/trades/plan?${params}`);
+
+    // Le signal n'a pas donné de stop : la règle de sortie le pose, et le dit.
+    if (state.stopAuto && data.stop !== null) {
+      form.stop.value = data.stop;
+      els.stopNote.textContent = `règle de sortie : -${num(data.settings.stopPercent, 1)} % de l'entrée`;
+    } else {
+      els.stopNote.textContent = '';
+    }
+
+    renderPlan(data.plan, data.settings);
+  } catch {
+    // Un plan indisponible ne bloque pas la saisie.
+  }
+}
+
+function renderPlan(plan, settings) {
+  if (!plan) {
     els.sizing.textContent = '';
     return;
   }
 
-  const direction = form.side.value === 'short' ? -1 : 1;
-  const perShare = (entry - stop) * direction;
-  if (perShare <= 0) {
-    els.sizing.textContent = "Le stop est du mauvais côté de l'entrée pour ce sens.";
+  if (!plan.quantity) {
+    els.sizing.textContent = "Sans stop exploitable, aucune taille ne peut être calculée : indiquez-le, ou laissez la règle de sortie s'appliquer.";
     return;
   }
 
-  const budget = (settings.capital * settings.riskPerTradePct) / 100;
-  const quantity = Math.floor(budget / perShare);
-  els.sizing.innerHTML =
-    `Risquer ${absPct(settings.riskPerTradePct)} de ${money(settings.capital)} sur cette ligne, ` +
-    `c'est <strong>${num(quantity, 0)} titres</strong> (${money(perShare * quantity)} de perte au stop). ` +
-    `<button type="button" class="link" id="apply-size">Utiliser</button>`;
+  const lignes = [
+    `Risquer ${absPct(plan.riskPercent)} de ${money(plan.capital)}, c'est <strong>${num(plan.quantity, 0)} titres</strong> ` +
+      `(${money(plan.notional)} engagés, ${money(plan.riskAmount)} de perte au stop). ` +
+      `<button type="button" class="link" id="apply-size">Utiliser</button>`,
+  ];
+
+  if (plan.fees.declared) {
+    lignes.push(
+      `Frais aller-retour à cette taille : <strong>${money(plan.fees.roundTrip, 2)}</strong>. ` +
+        `Il faut dépasser <strong>${num(plan.fees.breakEven)}</strong> pour gagner un centime.`,
+    );
+    if (plan.minQuantity) {
+      lignes.push(
+        `En dessous de <strong>${num(plan.minQuantity, 0)} titres</strong>, les frais prennent plus du cinquième du gain visé : ` +
+          `le trade ne vaut pas la peine d'être pris.`,
+      );
+    }
+    if (plan.feeWarning) lignes.push(esc(plan.feeWarning));
+  } else {
+    lignes.push(
+      `<span class="faint">Frais de courtage non renseignés : le seuil de rentabilité ne peut pas être calculé. ` +
+        `Indiquez-les en haut de page.</span>`,
+    );
+  }
+
+  if (isNum(plan.netAtTarget)) {
+    lignes.push(
+      `Au premier objectif : <strong class="up">${signedMoney(plan.netAtTarget, 2)}</strong> net de frais. ` +
+        `Au stop : <strong class="down">${signedMoney(plan.netAtStop, 2)}</strong>.`,
+    );
+  }
+
+  els.sizing.innerHTML = lignes.map((l) => `<span class="plan-line">${l}</span>`).join('');
 
   const apply = $('apply-size');
-  if (apply) apply.onclick = () => { els.tradeForm.quantity.value = quantity; };
+  if (apply) apply.onclick = () => { els.tradeForm.quantity.value = plan.quantity; };
 }
 
 /* ---------------- rendu du tableau de bord ---------------- */
@@ -398,6 +488,9 @@ function render() {
 
   els.capital.value = d.settings.capital;
   els.risk.value = d.settings.riskPerTradePct;
+  els.stopPercent.value = d.settings.stopPercent;
+  els.feeFixed.value = d.settings.feeFixed;
+  els.feePercent.value = d.settings.feePercent;
 
   renderSummary(d);
   renderAttention(d);
@@ -510,6 +603,7 @@ function renderToolbar(d) {
     </div>
     <div class="batch-row">
       <button class="batch" data-action="close" ${disabled}>Clôturer au marché</button>
+      <button class="batch" data-action="protect" ${disabled}>Stop à -${num(d.settings.stopPercent, 1)} %</button>
       <button class="batch" data-action="breakeven" ${disabled}>Stop à l'équilibre</button>
       <span class="trail">
         <button class="batch" data-action="trail" ${disabled}>Stop suiveur</button>
@@ -934,7 +1028,10 @@ $('market-price').onclick = async () => {
   }
 };
 
-els.tradeForm.oninput = updateSizing;
+els.tradeForm.oninput = (event) => {
+  if (event.target.name === 'stop') state.stopAuto = false;
+  updateSizing();
+};
 
 els.tradeForm.onsubmit = async (event) => {
   event.preventDefault();
@@ -960,7 +1057,13 @@ $('settings-form').onsubmit = async (event) => {
   try {
     const response = await api('/api/settings', {
       method: 'PATCH',
-      body: { capital: Number(els.capital.value), riskPerTradePct: Number(els.risk.value) },
+      body: {
+        capital: Number(els.capital.value),
+        riskPerTradePct: Number(els.risk.value),
+        stopPercent: Number(els.stopPercent.value),
+        feeFixed: Number(els.feeFixed.value),
+        feePercent: Number(els.feePercent.value),
+      },
     });
     adopt(response.dashboard);
     els.settingsNote.textContent = 'Enregistré.';

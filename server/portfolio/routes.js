@@ -13,7 +13,7 @@
 import { sendJson, readJsonBody, readBinaryBody, rejectCrossSite } from '../core/respond.js';
 import { rateLimited } from '../core/ratelimit.js';
 import { parseSignal } from './signal.js';
-import { suggestQuantity } from './positions.js';
+import { suggestQuantity, defaultStop, tradePlan } from './positions.js';
 import * as store from './store.js';
 import { buildDashboard, earningsWatch, quotesFor } from './service.js';
 import { createTracker } from '../core/http.js';
@@ -133,6 +133,21 @@ async function runBatch(body) {
           throw badRequest('le stop actuel est déjà plus serré');
         }
         if ((price - stop) * direction <= 0) throw badRequest('le stop tomberait du mauvais côté du prix');
+        return { stop };
+      })),
+    };
+  }
+
+  if (action === 'protect') {
+    const percent = Number(body.percent) || settings.stopPercent;
+    return {
+      action,
+      ...(await store.patchMany(ids, (trade) => {
+        if (trade.status === 'closed') throw badRequest('déjà soldée');
+        if (trade.stop !== null) throw badRequest('un stop est déjà posé');
+
+        const stop = defaultStop({ entry: trade.entry, side: trade.side, percent });
+        if (stop === null) throw badRequest('stop incalculable');
         return { stop };
       })),
     };
@@ -272,19 +287,61 @@ export async function handlePortfolioRoute(req, res, url) {
       const body = await readJsonBody(req);
       const signal = parseSignal(body.text);
       const { settings } = await store.read();
+
+      // Le post ne donne pas de stop dans la plupart des cas : on applique la
+      // règle de sortie de l'utilisateur, en disant que c'est elle qui parle et
+      // non le signal.
+      const fallback = defaultStop({ entry: signal.entry, side: signal.side, percent: settings.stopPercent });
+      const stop = signal.stop ?? fallback;
+
       sendJson(res, 200, {
         signal,
         suggestion: {
           capital: settings.capital,
           riskPerTradePct: settings.riskPerTradePct,
+          stop,
+          stopFromSignal: signal.stop !== null,
+          stopPercent: settings.stopPercent,
           quantity: suggestQuantity({
             capital: settings.capital,
             riskPercent: settings.riskPerTradePct,
             entry: signal.entry,
-            stop: signal.stop,
+            stop,
             side: signal.side,
           }),
+          plan: tradePlan({
+            entry: signal.entry,
+            stop,
+            target: signal.targets[0] ?? null,
+            side: signal.side,
+            settings,
+          }),
         },
+      });
+      return true;
+    }
+
+    // Plan de taille recalculé à la volée pendant la saisie : le formulaire
+    // change d'entrée, de stop ou d'objectif sans rien enregistrer.
+    if (req.method === 'GET' && path === `${PREFIX}/plan`) {
+      const number = (name) => {
+        const value = Number(url.searchParams.get(name));
+        return Number.isFinite(value) && value > 0 ? value : null;
+      };
+      const { settings } = await store.read();
+      const side = url.searchParams.get('side') === 'short' ? 'short' : 'long';
+      const entry = number('entry');
+
+      // Sans stop saisi, la règle de sortie s'applique : le plan renvoyé est
+      // ainsi toujours celui d'une position dont la perte est bornée.
+      const given = number('stop');
+      const stop = given ?? defaultStop({ entry, side, percent: settings.stopPercent });
+
+      sendJson(res, 200, {
+        settings,
+        stop,
+        stopIsDefault: given === null && stop !== null,
+        plan: tradePlan({ entry, stop, target: number('target'), side, settings }),
       });
       return true;
     }

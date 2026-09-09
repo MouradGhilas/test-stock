@@ -275,3 +275,10 @@ table.positions .actions { white-space: nowrap; text-align: right; }
 
 /* Le bouton « prix du marché » se loge sous le champ d'entrée. */
 .trade-form label #market-price { align-self: flex-start; font-size: 11.5px; }
+
+/* --- Plan de taille et note de champ --- */
+.field-note { color: var(--faint); font-size: 11px; }
+.plan-line { display: block; margin-bottom: 5px; }
+.plan-line:last-child { margin-bottom: 0; }
+.sizing .up { color: var(--green); }
+.sizing .down { color: var(--red); }

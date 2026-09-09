@@ -28,6 +28,11 @@ const FILE = path.join(DIR, 'trades.json');
 export const DEFAULT_SETTINGS = {
   capital: CONFIG.portfolio.defaultCapital,
   riskPerTradePct: CONFIG.portfolio.riskPerTradePct,
+  // Sortie appliquée d'office quand le signal ne donne pas de stop.
+  stopPercent: CONFIG.portfolio.defaultStopPercent,
+  // Frais de courtage par ordre, pour le seuil de rentabilité.
+  feeFixed: CONFIG.portfolio.feeFixed,
+  feePercent: CONFIG.portfolio.feePercent,
   currency: 'USD',
 };
 
@@ -177,6 +182,27 @@ export function updateSettings(patch = {}) {
       const risk = Number(patch.riskPerTradePct);
       if (!Number.isFinite(risk) || risk <= 0 || risk > 100) throw invalid('Risque par position : pourcentage entre 0 et 100 attendu.');
       settings.riskPerTradePct = risk;
+    }
+
+    // Un pourcentage de réglage, borné. Zéro est accepté pour des frais -- la
+    // plupart des courtiers n'en prennent plus -- mais pas pour un stop, qui
+    // sortirait alors au prix d'entrée.
+    const percentField = (field, label, min, max) => {
+      if (!(field in patch)) return;
+      const value = Number(patch[field]);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        throw invalid(`${label} : pourcentage entre ${min} et ${max} attendu.`);
+      }
+      settings[field] = value;
+    };
+
+    percentField('stopPercent', 'Sortie automatique', 0.1, 99);
+    percentField('feePercent', 'Frais proportionnels', 0, 10);
+
+    if ('feeFixed' in patch) {
+      const value = Number(patch.feeFixed);
+      if (!Number.isFinite(value) || value < 0) throw invalid('Frais fixes : montant positif ou nul attendu.');
+      settings.feeFixed = value;
     }
 
     if ('currency' in patch) {

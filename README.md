@@ -15,7 +15,7 @@ une décision.
 
 ```bash
 npm start           # http://localhost:3000
-npm test            # 81 tests, sans accès réseau
+npm test            # 90 tests, sans accès réseau
 ```
 
 Aucune dépendance à installer : le projet tourne sur Node 20+ et n'utilise que
@@ -74,15 +74,44 @@ relais :
   prix d'entrée » veut dire : entrez maintenant. Le bouton *prix du marché*
   interroge la cotation du ticker saisi et remplit le champ.
 
-Reste le stop, que personne ne peut deviner à votre place. Tant qu'il manque, la
-ligne porte son alerte *risque non borné* et n'entre pas dans le total du risque
-mesuré : c'est précisément ce que l'écran refuse de faire semblant de savoir.
+- **Le stop vient de votre règle de sortie.** Réglez-la une fois en haut de page
+  (« sortie à -5 % ») : dès qu'une entrée est connue, le stop est calculé et
+  affiché, marqué comme venant de la règle et non du signal. Il reste modifiable,
+  et un stop donné par le post n'est jamais remplacé. Pour les lignes déjà
+  enregistrées sans stop, le bouton *Stop à -5 %* le pose sur toute une
+  sélection. Une règle de conduite ne vaut que ce que vaut la discipline de s'y
+  tenir, et sur un titre volatil elle se déclenchera souvent -- mais une ligne
+  sans stop a une perte maximale inconnue, celle-ci ne l'a plus.
 
 Les captures vivent dans `data/images/`, jamais ailleurs. Le type est déduit des
 octets d'en-tête et non de ce qu'annonce le navigateur : un fichier déguisé en
 image est refusé à l'envoi, et le serveur ne resservira jamais autre chose
 qu'une image. Une capture envoyée puis abandonnée est balayée au démarrage
 suivant, passé un jour.
+
+## Combien de titres acheter
+
+Deux questions distinctes, que l'écran ne confond pas :
+
+**Combien risquer.** La taille qui met en jeu le pourcentage de capital choisi
+si le stop est touché. C'est la seule qui protège le compte : 1 % de 10 000 $
+avec un stop à 5 % de l'entrée, cela fait 400 titres à 5 $, pas un de plus.
+
+**À partir de combien ça vaut la peine.** En dessous d'une certaine taille, les
+frais d'aller-retour prennent une part absurde du gain visé — un gain de 12 $
+amputé de 4 $ de frais n'est pas un trade, c'est un virement au courtier.
+Renseignez vos frais par ordre (fixes et proportionnels) et le formulaire
+affiche, pendant la saisie :
+
+- le **prix mort** : celui qu'il faut dépasser pour gagner un centime, frais
+  compris ;
+- la **taille minimale** en dessous de laquelle les frais prennent plus du
+  cinquième du gain visé ;
+- le **résultat net** au premier objectif et au stop.
+
+Aucune de ces tailles ne rend un trade gagnant : la taille ne change pas la
+probabilité d'avoir raison, seulement la somme en jeu. Ce que le calcul dit,
+c'est à partir de quand les frais cessent de manger le résultat.
 
 ## Le chiffre que l'écran met au centre
 
@@ -107,8 +136,8 @@ tous les R du portefeuille.
 
 Sélection multiple (dont « celles en alerte »), puis une décision appliquée à
 tout le lot : clôturer au dernier prix connu, remonter les stops à l'équilibre,
-poser un stop suiveur, prendre au marché les signaux restés en veille, ou
-supprimer. Chaque ligne est acceptée ou refusée **individuellement**, avec sa
+poser le stop de sortie sur les lignes qui n'en ont pas, poser un stop suiveur,
+prendre au marché les signaux restés en veille, ou supprimer. Chaque ligne est acceptée ou refusée **individuellement**, avec sa
 raison — solder huit lignes sur dix en disant lesquelles ont résisté vaut mieux
 que tout annuler parce qu'une cotation manquait. Un stop suiveur ne recule
 jamais : il ne se déplace que du côté qui réduit le risque.
@@ -154,9 +183,11 @@ POST   /api/trades/parse                 → lecture d'un signal collé (sans ri
 POST   /api/trades                       → création d'une position
 PATCH  /api/trades/<id>                  → modification (stop, objectifs, clôture…)
 DELETE /api/trades/<id>                  → suppression
-POST   /api/trades/batch                 → action groupée : close, breakeven, trail, take, delete
+POST   /api/trades/batch                 → action groupée : close, protect, breakeven, trail,
+                                           take, delete
 GET    /api/trades/earnings              → publications à venir sur les lignes ouvertes
 GET    /api/trades/quote?ticker=TE       → cotation d'un titre pas encore suivi
+GET    /api/trades/plan?entry=&stop=&…   → taille au risque, prix mort, seuil de rentabilité
 POST   /api/images                       → envoi d'une capture (corps binaire, image/*)
 GET    /api/images/<id>                  → la capture, servie avec son vrai type
 PATCH  /api/settings                     → capital et risque par position
@@ -188,7 +219,7 @@ server/
     service.js          assemblage du tableau de bord
     routes.js           API et actions groupées
 public/                 interface (HTML/CSS/JS, sans framework)
-test/                   81 tests unitaires, sans accès réseau
+test/                   90 tests unitaires, sans accès réseau
 ```
 
 ## Limites assumées

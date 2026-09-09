@@ -217,3 +217,17 @@ test('la suppression rend les positions supprimées, pour effacer leurs captures
   assert.equal(deleted, 1);
   assert.deepEqual(removed.map((t) => t.attachments).flat(), ['b'.repeat(32)]);
 });
+
+test('les réglages de sortie et de frais sont bornés', async () => {
+  const settings = await store.updateSettings({ stopPercent: 5, feeFixed: 1, feePercent: 0.1 });
+  assert.equal(settings.stopPercent, 5);
+  assert.equal(settings.feeFixed, 1);
+
+  // Zéro est légitime pour des frais -- beaucoup de courtiers n'en prennent
+  // plus -- mais pas pour un stop, qui sortirait au prix d'entrée.
+  assert.equal((await store.updateSettings({ feePercent: 0 })).feePercent, 0);
+  await assert.rejects(store.updateSettings({ stopPercent: 0 }), /Sortie/);
+  await assert.rejects(store.updateSettings({ stopPercent: 150 }), /Sortie/);
+  await assert.rejects(store.updateSettings({ feeFixed: -1 }), /Frais fixes/);
+  await assert.rejects(store.updateSettings({ feePercent: 50 }), /Frais proportionnels/);
+});
