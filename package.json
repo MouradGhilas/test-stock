@@ -1,14 +1,13 @@
 {
   "name": "test-stock",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Analyse pre-resultats : scraping multi-sources et verdict d'entree sur une action",
+  "description": "Suivi des positions copiees depuis X : lecture des signaux, risque agrege, actions groupees",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test test/*.test.js",
-    "backtest": "node scripts/backtest.js"
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=20"

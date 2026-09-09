@@ -1,9 +1,9 @@
 /**
- * Source : API publique de nasdaq.com (celle qui alimenté leur site).
+ * Source : API publique de nasdaq.com (celle qui alimente leur site).
  *
- * C'est le socle de l'analyse : cotation, historique de prix, historique des
- * surprises de résultats, révisions d'estimations, consensus analystes,
- * short interest, actionnariat institutionnel et date des prochains résultats.
+ * Elle fournit les deux choses dont le suivi de positions a besoin : la
+ * cotation d'un titre, et la date de sa prochaine publication de résultats --
+ * l'échéance qu'un trade de swing ne devrait pas traverser sans le savoir.
  */
 
 import { CONFIG } from '../config.js';
@@ -36,7 +36,7 @@ async function nasdaq(path, { label, ttl, tracker }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Cotation et identite                                                */
+/* Cotation                                                            */
 /* ------------------------------------------------------------------ */
 
 export async function fetchQuote(ticker, tracker) {
@@ -61,63 +61,8 @@ export async function fetchQuote(ticker, tracker) {
   };
 }
 
-export async function fetchSummary(ticker, tracker) {
-  const data = await nasdaq(`/quote/${ticker}/summary?assetclass=stocks`, {
-    label: `Nasdaq · fiche société ${ticker}`,
-    ttl: CONFIG.cacheTtl.slow,
-    tracker,
-  });
-  const s = data?.summaryData;
-  if (!s) return null;
-
-  const [high52, low52] = String(s.FiftTwoWeekHighLow?.value || '').split('/').map(toNumber);
-
-  return {
-    sector: s.Sector?.value || null,
-    industry: s.Industry?.value || null,
-    marketCap: toNumber(s.MarketCap?.value),
-    averageVolume: toNumber(s.AverageVolume?.value),
-    previousClose: toNumber(s.PreviousClose?.value),
-    oneYearTarget: toNumber(s.OneYrTarget?.value),
-    fiftyTwoWeekHigh: high52 ?? null,
-    fiftyTwoWeekLow: low52 ?? null,
-    dividendYield: toNumber(s.Yield?.value),
-  };
-}
-
 /* ------------------------------------------------------------------ */
-/* Historique de prix                                                  */
-/* ------------------------------------------------------------------ */
-
-/** Retourne les bougies quotidiennes par ordre chronologique croissant. */
-export async function fetchHistory(ticker, tracker, days = CONFIG.analysis.historyDays) {
-  const today = new Date();
-  const from = toISODate(addDays(today, -days));
-  const to = toISODate(today);
-
-  const data = await nasdaq(
-    `/quote/${ticker}/historical?assetclass=stocks&fromdate=${from}&todate=${to}&limit=${days}`,
-    { label: `Nasdaq · historique ${ticker}`, ttl: CONFIG.cacheTtl.history, tracker },
-  );
-
-  const rows = data?.tradesTable?.rows || [];
-  const bars = rows
-    .map((row) => ({
-      date: parseDate(row.date),
-      open: toNumber(row.open),
-      high: toNumber(row.high),
-      low: toNumber(row.low),
-      close: toNumber(row.close),
-      volume: toNumber(row.volume),
-    }))
-    .filter((bar) => bar.date && bar.close !== null)
-    .sort((a, b) => a.date - b.date);
-
-  return bars;
-}
-
-/* ------------------------------------------------------------------ */
-/* Résultats : surprises passées, estimations, date du prochain rendez-vous */
+/* Résultats : surprises passées et date du prochain rendez-vous       */
 /* ------------------------------------------------------------------ */
 
 export async function fetchEarningsSurprises(ticker, tracker) {
@@ -140,39 +85,15 @@ export async function fetchEarningsSurprises(ticker, tracker) {
     .sort((a, b) => b.reportedAt - a.reportedAt);
 }
 
-export async function fetchEarningsForecast(ticker, tracker) {
-  const data = await nasdaq(`/analyst/${ticker}/earnings-forecast`, {
-    label: `Nasdaq · estimations analystes ${ticker}`,
-    ttl: CONFIG.cacheTtl.earnings,
-    tracker,
-  });
-
-  const map = (rows) =>
-    (rows || []).map((row) => ({
-      period: row.fiscalEnd || null,
-      consensus: toNumber(row.consensusEPSForecast),
-      high: toNumber(row.highEPSForecast),
-      low: toNumber(row.lowEPSForecast),
-      estimates: toNumber(row.noOfEstimates),
-      revisionsUp: toNumber(row.up),
-      revisionsDown: toNumber(row.down),
-    }));
-
-  return {
-    quarterly: map(data?.quarterlyForecast?.rows),
-    yearly: map(data?.yearlyForecast?.rows),
-  };
-}
-
 /**
  * Date des prochains résultats.
  *
- * Trois niveaux de fiabilite, du meilleur au moins bon :
+ * Trois niveaux de fiabilité, du meilleur au moins bon :
  *  1. `confirmed`  - le calendrier Nasdaq liste le titre à cette date ;
  *  2. `expected`   - le fournisseur (Zacks) annonce la date ;
- *  3. `estimated`  - on l'extrapole du rythme trimestriel passe.
- * Le niveau est remonte à l'UI : un pari base sur une date estimée n'a pas
- * la même valeur qu'un pari base sur une date confirmée.
+ *  3. `estimated`  - on l'extrapole du rythme trimestriel passé.
+ * Le niveau est remonté à l'interface : prévenir d'une publication extrapolée
+ * n'engage pas autant que prévenir d'une date confirmée.
  */
 export async function fetchEarningsDate(ticker, tracker, surprises = []) {
   let vendor = null;
@@ -341,149 +262,3 @@ async function confirmInCalendar(ticker, aroundDate, tracker) {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* Calendrier des publications à venir                                  */
-/* ------------------------------------------------------------------ */
-
-const TIMING_FROM_CALENDAR = {
-  'time-after-hours': 'after-close',
-  'time-pre-market': 'before-open',
-};
-
-/**
- * Sociétés publiant leurs résultats dans les prochains jours ouvrés.
- *
- * C'est l'entrée naturelle dans l'outil : la vraie question n'est pas
- * « que vaut telle action » mais « qui publie cette semaine, et lequel de
- * ces dossiers mérite qu'on s'y arrête ». Les jours sont interrogés en
- * parallèle et mis en cache : le calendrier ne bouge pas d'une heure sur
- * l'autre.
- *
- * @param {number} days     Nombre de jours ouvrés à couvrir.
- * @param {number} minCap   Capitalisation minimale, en dollars. Le calendrier
- *                          brut est saturé de très petites valeurs sur
- *                          lesquelles aucune analyse sérieuse n'est possible.
- */
-export async function fetchEarningsCalendar(tracker, { days = 5, minCap = 0, from = new Date() } = {}) {
-  const targets = [];
-  const cursor = new Date(from.getTime());
-  while (targets.length < days) {
-    const dow = cursor.getUTCDay();
-    if (dow !== 0 && dow !== 6) targets.push(new Date(cursor.getTime()));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  const fetched = await Promise.allSettled(
-    targets.map(async (day) => {
-      const iso = toISODate(day);
-      const data = await nasdaq(`/calendar/earnings?date=${iso}`, {
-        label: `Nasdaq · calendrier ${iso}`,
-        ttl: CONFIG.cacheTtl.calendar,
-        tracker,
-      });
-      return { date: iso, rows: data?.rows || [] };
-    }),
-  );
-
-  let total = 0;
-  const schedule = [];
-
-  for (const result of fetched) {
-    if (result.status !== 'fulfilled') continue;
-    const { date, rows } = result.value;
-    total += rows.length;
-
-    const companies = rows
-      .map((row) => ({
-        symbol: String(row.symbol || '').toUpperCase(),
-        name: row.name || null,
-        timing: TIMING_FROM_CALENDAR[row.time] || 'unknown',
-        marketCap: toNumber(row.marketCap),
-        consensusEps: toNumber(row.epsForecast),
-        estimates: toNumber(row.noOfEsts),
-        lastYearEps: toNumber(row.lastYearEPS),
-        lastYearDate: toISODate(parseDate(row.lastYearRptDt)),
-        fiscalQuarter: row.fiscalQuarterEnding || null,
-      }))
-      .filter((c) => c.symbol && (!minCap || (c.marketCap ?? 0) >= minCap))
-      // Les plus grosses capitalisations d'abord : ce sont celles dont les
-      // options et l'historique permettent une analyse exploitable.
-      .sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
-
-    if (companies.length) schedule.push({ date, companies });
-  }
-
-  schedule.sort((a, b) => a.date.localeCompare(b.date));
-
-  return {
-    from: toISODate(targets[0]),
-    to: toISODate(targets.at(-1)),
-    days: schedule,
-    retained: schedule.reduce((acc, d) => acc + d.companies.length, 0),
-    total,
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Consensus, short interest, actionnariat                             */
-/* ------------------------------------------------------------------ */
-
-export async function fetchRatings(ticker, tracker) {
-  const data = await nasdaq(`/analyst/${ticker}/ratings`, {
-    label: `Nasdaq · consensus analystes ${ticker}`,
-    ttl: CONFIG.cacheTtl.slow,
-    tracker,
-  });
-  if (!data) return null;
-
-  const count = toNumber(String(data.ratingsSummary || '').match(/(\d+)\s+analysts?/i)?.[1]);
-  return {
-    consensus: data.meanRatingType || null,
-    analystCount: count ?? (data.brokerNames?.length || null),
-    summary: data.ratingsSummary || null,
-  };
-}
-
-export async function fetchShortInterest(ticker, tracker) {
-  const data = await nasdaq(`/quote/${ticker}/short-interest?assetClass=stocks`, {
-    label: `Nasdaq · short interest ${ticker}`,
-    ttl: CONFIG.cacheTtl.slow,
-    tracker,
-  });
-
-  const rows = (data?.shortInterestTable?.rows || [])
-    .map((row) => ({
-      settlementDate: parseDate(row.settlementDate),
-      shares: toNumber(row.interest),
-      avgDailyVolume: toNumber(row.avgDailyShareVolume),
-      daysToCover: toNumber(row.daysToCover),
-    }))
-    .filter((row) => row.settlementDate)
-    .sort((a, b) => b.settlementDate - a.settlementDate);
-
-  return rows.length ? rows : null;
-}
-
-export async function fetchInstitutional(ticker, tracker) {
-  const data = await nasdaq(
-    `/company/${ticker}/institutional-holdings?limit=15&type=TOTAL&sortColumn=marketValue&sortOrder=DESC`,
-    { label: `Nasdaq · actionnariat institutionnel ${ticker}`, ttl: CONFIG.cacheTtl.slow, tracker },
-  );
-  if (!data) return null;
-
-  const byLabel = (label) =>
-    (data.activePositions?.rows || []).find((row) =>
-      String(row.positions || '').toLowerCase().includes(label),
-    );
-
-  const increased = byLabel('increased');
-  const decreased = byLabel('decreased');
-
-  return {
-    institutionalOwnershipPercent: toNumber(data.ownershipSummary?.SharesOutstandingPCT?.value),
-    increasedHolders: toNumber(increased?.holders),
-    decreasedHolders: toNumber(decreased?.holders),
-    increasedShares: toNumber(increased?.shares),
-    decreasedShares: toNumber(decreased?.shares),
-  };
-}

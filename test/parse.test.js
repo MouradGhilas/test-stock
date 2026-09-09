@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  toNumber, parseDate, toISODate, daysBetween, decodeEntities, stripTags, normalizeTicker,
-} from '../server/core/parse.js';
-import { cleanCompanyName } from '../server/sources/news.js';
+import { toNumber, parseDate, toISODate, daysBetween, normalizeTicker } from '../server/core/parse.js';
 
 test('toNumber normalise les formats affichés par les sources', () => {
   assert.equal(toNumber('$1,234.56'), 1234.56);
@@ -33,23 +30,10 @@ test('daysBetween compte les jours calendaires, signe compris', () => {
   assert.equal(daysBetween(parseDate('2026-09-08'), parseDate('2026-09-08')), 0);
 });
 
-test('decodeEntities et stripTags nettoient le XML des flux', () => {
-  assert.equal(decodeEntities('AT&amp;T &quot;beats&quot;'), 'AT&T "beats"');
-  assert.equal(decodeEntities('<![CDATA[Titre]]>'), 'Titre');
-  assert.equal(stripTags('<b>Apple</b>   <i>surges</i>'), 'Apple surges');
-});
-
 test('normalizeTicker accepte les tickers valides et rejette le reste', () => {
   assert.equal(normalizeTicker(' aapl '), 'AAPL');
   assert.equal(normalizeTicker('BRK.B'), 'BRK.B');
   for (const bad of ['<script>', '', '1AAPL', 'TROPLONGTICKER', 'a b']) {
     assert.equal(normalizeTicker(bad), null, `attendu null pour ${JSON.stringify(bad)}`);
   }
-});
-
-test('cleanCompanyName retire les suffixes de cotation', () => {
-  assert.equal(cleanCompanyName('Apple Inc. Common Stock'), 'Apple Inc.');
-  assert.equal(cleanCompanyName('Alphabet Inc. Class A Common Stock'), 'Alphabet Inc.');
-  assert.equal(cleanCompanyName('Banco Santander, S.A. American Depositary Shares'), 'Banco Santander, S.A.');
-  assert.equal(cleanCompanyName(null), null);
 });

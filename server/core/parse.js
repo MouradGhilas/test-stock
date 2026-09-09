@@ -3,7 +3,7 @@
  *
  * Les sources renvoient des chaînes destinees a l'affichage humain
  * ("$1,234.56", "3.21%", "N/A", "09/08/2026", "Sep 24, 2026"). Tout passe
- * par ici avant d'entrer dans le moteur d'analyse.
+ * par ici avant d'entrer dans l'application.
  */
 
 const NA = new Set(['', 'n/a', 'na', 'null', 'undefined', '--', '-', 'nm']);
@@ -32,9 +32,6 @@ export function toNumber(input) {
   if (!Number.isFinite(value)) return null;
   return negative ? -value : value;
 }
-
-/** "3.21%" -> 3.21 (on garde l'unite "pourcent", pas la fraction). */
-export const toPercent = toNumber;
 
 const MONTHS = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
@@ -74,13 +71,6 @@ function utc(year, month, day) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Timestamp UNIX (secondes ou millisecondes) -> Date. */
-export function fromUnix(value) {
-  const n = toNumber(value);
-  if (n === null) return null;
-  return new Date(n > 1e11 ? n : n * 1000);
-}
-
 export function toISODate(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
@@ -99,26 +89,6 @@ export function addDays(date, days) {
   const d = new Date(date.getTime());
   d.setUTCDate(d.getUTCDate() + days);
   return d;
-}
-
-/** Decode les entites XML/HTML les plus courantes des flux RSS. */
-export function decodeEntities(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;|&rsquo;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, '&')
-    .trim();
-}
-
-/** Retire les balises HTML d'un fragment scrapé. */
-export function stripTags(html) {
-  return decodeEntities(String(html || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 
 /** Normalise un ticker saisi par l'utilisateur. Retourne null si invalide. */
